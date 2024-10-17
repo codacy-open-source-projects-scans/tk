@@ -51,8 +51,8 @@ static const Tk_ConfigSpec configSpecs[] = {
     {TK_CONFIG_PIXELS, "-borderwidth", "borderWidth", "BorderWidth",
 	DEF_SCROLLBAR_BORDER_WIDTH, offsetof(TkScrollbar, borderWidthObj), TK_CONFIG_OBJS, NULL},
     {TK_CONFIG_STRING, "-command", "command", "Command",
-	DEF_SCROLLBAR_COMMAND, offsetof(TkScrollbar, command),
-	TK_CONFIG_NULL_OK, NULL},
+	DEF_SCROLLBAR_COMMAND, offsetof(TkScrollbar, commandObj),
+	TK_CONFIG_OBJS|TK_CONFIG_NULL_OK, NULL},
     {TK_CONFIG_ACTIVE_CURSOR, "-cursor", "cursor", "Cursor",
 	DEF_SCROLLBAR_CURSOR, offsetof(TkScrollbar, cursor), TK_CONFIG_NULL_OK, NULL},
     {TK_CONFIG_PIXELS, "-elementborderwidth", "elementBorderWidth",
@@ -159,8 +159,7 @@ Tk_ScrollbarObjCmd(
 	    scrollPtr, ScrollbarCmdDeletedProc);
     scrollPtr->vertical = 0;
     scrollPtr->widthObj = 0;
-    scrollPtr->command = NULL;
-    scrollPtr->commandSize = 0;
+    scrollPtr->commandObj = NULL;
     scrollPtr->repeatDelay = 0;
     scrollPtr->repeatInterval = 0;
     scrollPtr->borderWidthObj = NULL;
@@ -484,11 +483,6 @@ ConfigureScrollbar(
      * from a 3-D border.
      */
 
-    if (scrollPtr->command != NULL) {
-	scrollPtr->commandSize = (int) strlen(scrollPtr->command);
-    } else {
-	scrollPtr->commandSize = 0;
-    }
     Tk_GetPixelsFromObj(NULL, scrollPtr->tkwin, scrollPtr->borderWidthObj, &borderWidth);
     if (borderWidth < 0) {
 	Tcl_DecrRefCount(scrollPtr->borderWidthObj);
