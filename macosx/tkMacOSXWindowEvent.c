@@ -302,11 +302,8 @@ extern NSString *NSWindowDidOrderOffScreenNotification;
     observe(NSWindowDidOrderOnScreenNotification, windowBecameVisible:);
     observe(NSWindowWillStartLiveResizeNotification, windowLiveResize:);
     observe(NSWindowDidEndLiveResizeNotification, windowLiveResize:);
-
-#if MAC_OS_X_VERSION_MAX_ALLOWED >= 1070
     observe(NSWindowDidEnterFullScreenNotification, windowEnteredFullScreen:);
     observe(NSWindowDidExitFullScreenNotification, windowExitedFullScreen:);
-#endif
 
 #ifdef TK_MAC_DEBUG_NOTIFICATIONS
     observe(NSWindowWillMoveNotification, windowDragStart:);
@@ -852,7 +849,7 @@ TkWmProtocolEventProc(
 	    Tcl_Preserve(protPtr);
 	    interp = protPtr->interp;
 	    Tcl_Preserve(interp);
-	    result = Tcl_EvalEx(interp, protPtr->command, TCL_INDEX_NONE, TCL_EVAL_GLOBAL);
+	    result = Tcl_EvalEx(interp, Tcl_GetString(protPtr->commandObj), TCL_INDEX_NONE, TCL_EVAL_GLOBAL);
 	    if (result != TCL_OK) {
 		Tcl_AppendObjToErrorInfo(interp, Tcl_ObjPrintf(
 			"\n    (command for \"%s\" window manager protocol)",
@@ -963,7 +960,7 @@ ExposeRestrictProc(
 }
 - (void) updateLayer {
     CGContextRef context = self.tkLayerBitmapContext;
-    if (context) {
+    if (context && ![NSApp tkWillExit]) {
 	/*
 	 * Create a CGImage by copying (probably using copy-on-write) the
 	 * bitmap data of the CGBitmapContext that we have been using for
@@ -986,7 +983,6 @@ ExposeRestrictProc(
     }
 }
 
-#if MAC_OS_X_VERSION_MAX_ALLOWED >= 1070
 - (void) viewDidChangeBackingProperties
 {
 
@@ -1002,7 +998,6 @@ ExposeRestrictProc(
     // need to redraw
     [self generateExposeEvents: self.bounds];
 }
-#endif
 
 -(void) setFrameSize: (NSSize)newsize
 {

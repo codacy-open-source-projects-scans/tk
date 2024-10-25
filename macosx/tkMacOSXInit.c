@@ -43,6 +43,7 @@ static Tcl_ObjCmdProc TkMacOSVersionObjCmd;
 @synthesize poolLock = _poolLock;
 @synthesize macOSVersion = _macOSVersion;
 @synthesize tkLiveResizeEnded = _tkLiveResizeEnded;
+@synthesize tkWillExit = _tkWillExit;
 @synthesize tkPointerWindow = _tkPointerWindow;
 - (void) setTkPointerWindow: (TkWindow *)winPtr
 {
@@ -136,6 +137,7 @@ static Tcl_ObjCmdProc TkMacOSVersionObjCmd;
 
 - (BOOL)applicationSupportsSecureRestorableState:(NSApplication *)app
 {
+    (void) app;
     return YES;
 }
 
@@ -405,17 +407,13 @@ TCL_NORETURN void TkpExitProc(
     /*
      * At this point it is too late to be looking up the Tk window associated
      * to any NSWindows, but it can happen.  This makes sure the answer is None
-     * if such a query is attempted.
-     * It is also too late to be updating the backing layer of a window.  All
-     * tkLayerBitmapContext properties are set to nil so that updateLayer will
-     * return immediately.
+     * if such a query is attempted.  It is also too late to be running any
+     * event loops, as happens in updateLayer.  Set the tkWillExit flag to
+     * prevent this.
      */
 
+    [NSApp setTkWillExit:YES];
     for (TKWindow *w in [NSApp orderedWindows]) {
-	TKContentView *view = (TKContentView *) [w contentView];
-	if ([view respondsToSelector: @selector (tkLayerBitmapContext)]) {
-	    [view setTkLayerBitmapContext: nil];
-	}
 	if ([w respondsToSelector: @selector (tkWindow)]) {
 	    [w setTkWindow: None];
 	}
@@ -457,6 +455,9 @@ static void TkMacOSXSignalHandler(TCL_UNUSED(int)) {
 
 static void showRootWindow(void *clientData) {
     NSWindow *root = (NSWindow *) clientData;
+    if ([NSApp tkWillExit]) {
+        return;
+    }
     TkWindow *winPtr = TkMacOSXGetTkWindow(root);
     WmInfo *wmPtr = winPtr->wmInfoPtr;
     if (wmPtr->hints.initial_state == NormalState) {
@@ -608,6 +609,9 @@ TkpInit(
 #if defined(USE_CUSTOM_EXIT_PROC)
 	    doCleanupFromExit = YES;
 #endif
+	} else if (getenv("TK_NO_STDERR") != NULL) {
+	    FILE *null = fopen("/dev/null", "w");
+	    dup2(fileno(null), STDERR_FILENO);
 	}
 
 	/*
@@ -691,7 +695,7 @@ TkpInit(
     Tcl_CreateObjCommand(interp, "::tk::mac::GetAppPath",
 	    TkMacOSXGetAppPathObjCmd, NULL, NULL);
     Tcl_CreateObjCommand(interp, "::tk::mac::macOSVersion",
-	   TkMacOSVersionObjCmd, NULL, NULL);
+	    TkMacOSVersionObjCmd, NULL, NULL);
     MacSystrayInit(interp);
     MacPrint_Init(interp);
 
