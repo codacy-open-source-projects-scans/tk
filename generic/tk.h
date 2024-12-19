@@ -563,6 +563,7 @@ typedef struct Tk_FontMetrics {
 #define TK_WHOLE_WORDS		1
 #define TK_AT_LEAST_ONE		2
 #define TK_PARTIAL_OK		4
+#define TK_ISOLATE_END		32
 
 /*
  * Flags passed to Tk_ComputeTextLayout:
@@ -1154,9 +1155,11 @@ typedef struct Tk_CanvasTextInfo {
     int cursorOn;		/* Non-zero means that an insertion cursor
 				 * should be displayed in focusItemPtr.
 				 * Read-only to items.*/
+#if TK_MAJOR_VERSION > 8
     void *reserved1;		/* reserved for future use */
     void *reserved2;
     void *reserved3;
+#endif
 } Tk_CanvasTextInfo;
 
 /*

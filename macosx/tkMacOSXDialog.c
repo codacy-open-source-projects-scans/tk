@@ -577,7 +577,7 @@ parseFileFilters(
 			globPtr = globPtr->next) {
 		    const char *str = globPtr->pattern;
 		    while (*str && (*str == '*' || *str == '.')) {
-		    	str++;
+			str++;
 		    }
 		    if (*str) {
 			NSString *extension = [[TKNSString alloc] initWithTclUtfBytes:str length:TCL_INDEX_NONE];
@@ -776,7 +776,7 @@ Tk_GetOpenFileObjCmd(
 	 * panel.  Prepend the title to the message in this case.
 	 */
 
-	if ([NSApp macOSVersion] > 101000) {
+	if ([NSApp macOSVersion] >= 101100) {
 	    if (message) {
 		NSString *fullmessage =
 		    [[NSString alloc] initWithFormat:@"%@\n%@", title, message];
@@ -1532,7 +1532,7 @@ Tk_MessageBoxObjCmd(
     if (haveParentOption && parent && ![parent attachedSheet]) {
 	parentIsKey = [parent isKeyWindow];
 #if MAC_OS_X_VERSION_MIN_REQUIRED >= 1090
- 	[alert beginSheetModalForWindow:parent
+	[alert beginSheetModalForWindow:parent
 	       completionHandler:^(NSModalResponse returnCode) {
 	    [NSApp tkAlertDidEnd:alert
 		    returnCode:returnCode

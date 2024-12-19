@@ -456,7 +456,7 @@ static void TkMacOSXSignalHandler(TCL_UNUSED(int)) {
 static void showRootWindow(void *clientData) {
     NSWindow *root = (NSWindow *) clientData;
     if ([NSApp tkWillExit]) {
-        return;
+	return;
     }
     TkWindow *winPtr = TkMacOSXGetTkWindow(root);
     WmInfo *wmPtr = winPtr->wmInfoPtr;
@@ -651,7 +651,7 @@ TkpInit(
 		 * checking whether it was immediately withdrawn, and
 		 * therefore does not need to be placed on the screen.
 		 */
-		
+
 		Tcl_DoWhenIdle(showRootWindow, window);
 		break;
 	    }

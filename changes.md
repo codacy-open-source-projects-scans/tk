@@ -9,6 +9,23 @@ Release Tk 9.0.1 arises from the check-in with tag `core-9-0-1`.
 ## Changes since Tk 9.0.0
  - [Canvas widget handles pixel objects incorrectly in Tk 9.0](https://core.tcl-lang.org/tk/tktview/610a73)
  - [SIGABRT from Tk_DeleteErrorHandler()](https://core.tcl-lang.org/tk/tktview/f52986)
+ - [Tilde file syntax not available on 9.0 but used by "~/.Xdefaults"](https://core.tcl-lang.org/tk/tktview/fcfddc)
+ - [leftover use of tilde in filename string](https://core.tcl-lang.org/tk/tktview/767702)
+ - [build failure on macOS < 10.13](https://core.tcl-lang.org/tk/tktview/d48cbf)
+ - [Two potentially bogus binding scripts for <TouchpadScroll>](https://core.tcl-lang.org/tk/tktview/73c5e3)
+ - [Aqua: canvas items are not always redrawn](https://core.tcl-lang.org/tk/tktview/5869c2)
+ - [Aqua: color rgb values do not behave as expected when appearance is changed](https://core.tcl-lang.org/tk/tktview/01f58b)
+ - [Aqua: winfo rgb . systemLabelColor returns a weird result on aqua](https://core.tcl-lang.org/tk/tktview/23b57a)
+ - [Aqua: background thread became slower](https://core.tcl-lang.org/tk/tktview/547cc6)
+ - [Use of Tcl_Obj vs char * in Widget storage](https://core.tcl-lang.org/tk/tktview/f91aa2)
+ - [cannot build .chm help file (Windows)](https://core.tcl-lang.org/tk/tktview/bb110c)
+ - [Tk initialization overwrites thread specific data](https://core.tcl-lang.org/tk/tktview/bcbf4c)
+ - [File clamTheme.tcl misses code related to the -indicatorforeground option](https://core.tcl-lang.org/tk/tktview/a69fd7)
+ - [Segfault when using menu(button) with the -font option](https://core.tcl-lang.org/tk/tktview/8ce672)
+ - [TIP #706: Expose three Tk "In Context" functions via stubs table](https://core.tcl-lang.org/tips/doc/trunk/tip/706.md)
+ - [Bind mechanism vs. GNOME](https://core.tcl-lang.org/tk/tktview/6bdf1a)
+ - [many PIXEL options don't keep their configured value](https://core.tcl-lang.org/tk/tktview/29ba53)
+ - [Menu entry underline does not consider activeborderwidth](https://core.tcl-lang.org/tk/tktview/844c0b)
 
 Release Tk 9.0.0 arises from the check-in with tag `core-9-0-0`.
 
@@ -41,12 +58,8 @@ writing Tcl scripts containing Tk commands.
  - Read/write access to photo image metadata
 
 ## Known bugs
- - [Use of Tcl_Obj vs char * in Widget storage](https://core.tcl-lang.org/tk/tktview/f91aa2)
- - [Tilde file syntax not available on 9.0 but used by "~/.Xdefaults"](https://core.tcl-lang.org/tk/tktview/fcfddc)
- - [many PIXEL options don't keep their configured value](https://core.tcl-lang.org/tk/tktview/29ba53)
  - [Inconsistent reporting of child geometry changes to grid container](https://core.tcl-lang.org/tk/tktview/beaa8e)
  - [Inconsistency in whether widgets allow negative borderwidths](https://core.tcl-lang.org/tk/tktview/5f739d)
- - [Enter key works differently in Windows and Linux](https://core.tcl-lang.org/tk/tktview/b3a1b9)
  - [slow widget creation if default font is not used](https://core.tcl-lang.org/tk/tktview/8da7af)
  - [The wm manage command does not work on current macOS versions](https://core.tcl-lang.org/tk/tktview/8a6012)
  - [Slow processing irregular transparencies](https://core.tcl-lang.org/tk/tktview/919066)

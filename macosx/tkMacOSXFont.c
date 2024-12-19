@@ -73,7 +73,7 @@ struct SystemFontMapEntry {
 
 #define ThemeFont(n, ...) { kTheme##n##Font, "system" #n "Font", ##__VA_ARGS__ }
 static const struct SystemFontMapEntry systemFontMap[] = {
-    ThemeFont(System, 			"TkDefaultFont", "TkIconFont"),
+    ThemeFont(System,			"TkDefaultFont", "TkIconFont"),
     ThemeFont(EmphasizedSystem,		"TkCaptionFont", NULL),
     ThemeFont(SmallSystem,		"TkHeadingFont", "TkTooltipFont"),
     ThemeFont(SmallEmphasizedSystem, NULL, NULL),
@@ -486,7 +486,9 @@ startOfClusterObjCmd(
 	Tcl_SetErrorCode(interp, "TK", "VALUE", "INDEX", NULL);
 	return TCL_ERROR;
     }
-    if (idx > 0 && len != ulen) {
+    if (idx >= ulen) {
+	idx = len;
+    } else if (idx > 0 && len != ulen) {
 	/* The string contains codepoints > \uFFFF. Determine UTF-16 index */
 	Tcl_Size newIdx = 0;
 	for (Tcl_Size i = 0; i < idx; i++) {
@@ -543,7 +545,9 @@ endOfClusterObjCmd(
 	Tcl_SetErrorCode(interp, "TK", "VALUE", "INDEX", NULL);
 	return TCL_ERROR;
     }
-    if (idx > 0 && len != ulen) {
+    if (idx >= ulen) {
+	idx = len;
+    } else if (idx > 0 && len != ulen) {
 	/* The string contains codepoints > \uFFFF. Determine UTF-16 index */
 	Tcl_Size newIdx = 0;
 	for (Tcl_Size i = 0; i < idx; i++) {
@@ -923,7 +927,7 @@ void
 TkpGetFontAttrsForChar(
     TCL_UNUSED(Tk_Window),		/* Window on the font's display */
     Tk_Font tkfont,		/* Font to query */
-    int c,	 		/* Character of interest */
+    int c,			/* Character of interest */
     TkFontAttributes* faPtr)	/* Output: Font attributes */
 {
     MacFont *fontPtr = (MacFont *) tkfont;
@@ -954,7 +958,7 @@ TkpGetFontAttrsForChar(
  *	characters.
  *
  *	With ATSUI we need the line context to do this right, so we have the
- *	actual implementation in TkpMeasureCharsInContext().
+ *	actual implementation in Tk_MeasureCharsInContext().
  *
  * Results:
  *	The return value is the number of bytes from source that fit into the
@@ -992,18 +996,18 @@ Tk_MeasureChars(
     int *lengthPtr)		/* Filled with x-location just after the
 				 * terminating character. */
 {
-    return TkpMeasureCharsInContext(tkfont, source, numBytes, 0, numBytes,
+    return Tk_MeasureCharsInContext(tkfont, source, numBytes, 0, numBytes,
 	    maxLength, flags, lengthPtr);
 }
 
 /*
  *---------------------------------------------------------------------------
  *
- * TkpMeasureCharsInContext --
+ * Tk_MeasureCharsInContext --
  *
  *	Determine the number of bytes from the string that will fit in the
  *	given horizontal span. The measurement is done under the assumption
- *	that TkpDrawCharsInContext() will be used to actually display the
+ *	that Tk_DrawCharsInContext() will be used to actually display the
  *	characters.
  *
  *	This one is almost the same as Tk_MeasureChars(), but with access to
@@ -1021,7 +1025,7 @@ Tk_MeasureChars(
  */
 
 int
-TkpMeasureCharsInContext(
+Tk_MeasureCharsInContext(
     Tk_Font tkfont,		/* Font in which characters will be drawn. */
     const char * source,	/* UTF-8 string to be displayed. Need not be
 				 * '\0' terminated. */
@@ -1267,7 +1271,7 @@ TkDrawAngledChars(
 /*
  *---------------------------------------------------------------------------
  *
- * TkpDrawCharsInContext --
+ * Tk_DrawCharsInContext --
  *
  *	Draw a string of characters on the screen like Tk_DrawChars(), with
  *	access to all the characters on the line for context.
@@ -1285,7 +1289,7 @@ TkDrawAngledChars(
  */
 
 void
-TkpDrawCharsInContext(
+Tk_DrawCharsInContext(
     Display *display,		/* Display on which to draw. */
     Drawable drawable,		/* Window or pixmap in which to draw. */
     GC gc,			/* Graphics context for drawing characters. */
