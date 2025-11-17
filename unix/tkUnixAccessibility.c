@@ -2952,23 +2952,47 @@ int TkAtkAccessibility_Init(Tcl_Interp *interp)
 
     /* Register Tcl commands. */
     Tcl_CreateObjCommand(interp, "::tk::accessible::add_acc_object",
-			 TkAtkAccessibleObjCmd, NULL, NULL);
+	    TkAtkAccessibleObjCmd, NULL, NULL);
     Tcl_CreateObjCommand(interp, "::tk::accessible::emit_selection_change",
-			 EmitSelectionChanged, NULL, NULL);
+	    EmitSelectionChanged, NULL, NULL);
     Tcl_CreateObjCommand(interp, "::tk::accessible::emit_focus_change",
-			 EmitFocusChanged, NULL, NULL);
+	    EmitFocusChanged, NULL, NULL);
     Tcl_CreateObjCommand(interp, "::tk::accessible::check_screenreader",
-			 IsScreenReaderRunning, NULL, NULL);
+	    IsScreenReaderRunning, NULL, NULL);
 
     return TCL_OK;
 }
 #else
+
+/* Stub command to run if Tk is compiled without accessibility support. */
+
+static int
+TkAccessibleStubObjCmd(
+    TCL_UNUSED(void *), /* clientData */
+    Tcl_Interp *interp,
+    TCL_UNUSED(int), /* objc */
+    TCL_UNUSED(Tcl_Obj *const *)) /* objv */
+{
+    static int warned = 0;
+
+    if (!warned) {
+	Tcl_SetObjResult(interp,
+	Tcl_NewStringObj("Warning: Tk accessibility support not available in this build.", -1));
+	warned = 1;
+    } else {
+	Tcl_SetObjResult(interp, Tcl_NewObj()); /* Empty string after first warning. */
+    }
+
+    return TCL_OK;
+}
+
+
 int TkAtkAccessibility_Init(Tcl_Interp *interp)
 {
-    Tcl_CreateObjCommand(interp, "::tk::accessible::add_acc_object", NULL, NULL, NULL);
-    Tcl_CreateObjCommand(interp, "::tk::accessible::emit_selection_change", NULL, NULL, NULL);
-    Tcl_CreateObjCommand(interp, "::tk::accessible::emit_focus_change", NULL, NULL, NULL);
-    Tcl_CreateObjCommand(interp, "::tk::accessible::check_screenreader", NULL, NULL, NULL);
+    Tcl_CreateObjCommand(interp, "::tk::accessible::add_acc_object", TkAccessibleStubObjCmd, NULL, NULL);
+    Tcl_CreateObjCommand(interp, "::tk::accessible::emit_selection_change", TkAccessibleStubObjCmd, NULL, NULL);
+    Tcl_CreateObjCommand(interp, "::tk::accessible::emit_focus_change", TkAccessibleStubObjCmd, NULL, NULL);
+    Tcl_CreateObjCommand(interp, "::tk::accessible::check_screenreader", TkAccessibleStubObjCmd, NULL, NULL);
     return TCL_OK;
 }
 #endif
