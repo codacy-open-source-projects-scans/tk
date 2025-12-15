@@ -1037,7 +1037,7 @@ ExposeRestrictProc(
 }
 - (void) updateLayer {
     CGContextRef context = self.tkLayerBitmapContext;
-    static bool initialized = NO;
+    static bool initialized = false;
     if (context && ![NSApp tkWillExit]) {
 	/*
 	 * Create a CGImage by copying (probably using copy-on-write) the
@@ -1059,7 +1059,7 @@ ExposeRestrictProc(
 
 	if (!initialized) {
 	    while(Tcl_DoOneEvent(TCL_IDLE_EVENTS)){}
-	    initialized = YES;
+	    initialized = true;
 	}
     }
 }
@@ -1268,7 +1268,7 @@ static const char *const accentNames[] = {
      * elements for the Toggleswitch* styles if necessary
      */
     Tcl_Interp *interp = Tk_Interp(tkwin);
-    int code = Tcl_EvalEx(interp, "ttk::toggleswitch::CondUpdateElements",
+    int code = Tcl_EvalEx(interp, "after 0 ttk::toggleswitch::CondUpdateElements",
 	    TCL_INDEX_NONE, TCL_EVAL_GLOBAL);
     if (code != TCL_OK) {
 	Tcl_BackgroundException(interp, code);
