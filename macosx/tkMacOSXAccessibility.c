@@ -35,12 +35,12 @@ TkAccessibilityElement *TkAccessibility_GetElementForWindow(Tk_Window tkwin);
 Tk_Window TkAccessibility_GetWindowForElement(TkAccessibilityElement *element);
 void TkAccessibility_UnlinkWindowAndElement(Tk_Window tkwin, TkAccessibilityElement *element);
 void TkAccessibility_CleanupHashTables(void);
-static int TkMacOSXAccessibleObjCmd(void *clientData,Tcl_Interp *ip, int objc, Tcl_Obj *const objv[]);
+static int TkMacOSXAccessibleObjCmd(void *clientData,Tcl_Interp *ip, Tcl_Size objc, Tcl_Obj *const objv[]);
 static void TkMacOSXAccessibility_DestroyHandler(void *clientData, XEvent *eventPtr);
 void TkMacOSXAccessibility_RegisterForCleanup(Tk_Window tkwin, void *accessibilityElement);
-int IsVoiceOverRunning(void *clientData, Tcl_Interp *ip, int objc, Tcl_Obj *const objv[]);
+int IsVoiceOverRunning(void *clientData, Tcl_Interp *ip, Tcl_Size objc, Tcl_Obj *const objv[]);
 int TkMacOSXAccessibility_Init(Tcl_Interp * interp);
-static int EmitSelectionChanged(void *clientData,Tcl_Interp *ip, int objc, Tcl_Obj *const objv[]);
+static int EmitSelectionChanged(void *clientData,Tcl_Interp *ip, Tcl_Size objc, Tcl_Obj *const objv[]);
 int TkMacOSXAccessibility_Init(Tcl_Interp * interp);
 static int ActionEventProc(Tcl_Event *ev, int flags);
 
@@ -187,13 +187,13 @@ void PostAccessibilityAnnouncement(NSString *message)
 	return nil;
     }
 
-    Tcl_HashTable *AccessibleAttributes = Tcl_GetHashValue(hPtr);
+    Tcl_HashTable *AccessibleAttributes = (Tcl_HashTable *)Tcl_GetHashValue(hPtr);
     Tcl_HashEntry *hPtr2 = Tcl_FindHashEntry(AccessibleAttributes, "role");
     if (!hPtr2) {
 	return nil;
     }
 
-    Tcl_Obj *roleObj = Tcl_GetHashValue(hPtr2);
+    Tcl_Obj *roleObj = (Tcl_Obj *)Tcl_GetHashValue(hPtr2);
     if (!roleObj) {
 	return nil;
     }
@@ -225,7 +225,7 @@ void PostAccessibilityAnnouncement(NSString *message)
 	return @"";
     }
 
-    Tcl_HashTable *AccessibleAttributes = Tcl_GetHashValue(hPtr);
+    Tcl_HashTable *AccessibleAttributes = (Tcl_HashTable *)Tcl_GetHashValue(hPtr);
 
     /* Special handling for group roles (tables, listboxes, trees). */
     CFStringRef role = (__bridge CFStringRef)self.accessibilityRole;
@@ -243,7 +243,7 @@ void PostAccessibilityAnnouncement(NSString *message)
 	return @"";
     }
 
-    Tcl_Obj *descObj = Tcl_GetHashValue(hPtr2);
+    Tcl_Obj *descObj = (Tcl_Obj *)Tcl_GetHashValue(hPtr2);
     if (!descObj) {
 	return @"";
     }
@@ -273,7 +273,7 @@ void PostAccessibilityAnnouncement(NSString *message)
 	return nil;
     }
 
-    AccessibleAttributes = Tcl_GetHashValue(hPtr);
+    AccessibleAttributes = (Tcl_HashTable *)Tcl_GetHashValue(hPtr);
 
     /*
      * Special handling for checkbuttons, radio buttons and toggle switches.
@@ -373,13 +373,13 @@ void PostAccessibilityAnnouncement(NSString *message)
 	return @"";
     }
 
-    Tcl_HashTable *AccessibleAttributes = Tcl_GetHashValue(hPtr);
+    Tcl_HashTable *AccessibleAttributes = (Tcl_HashTable *)Tcl_GetHashValue(hPtr);
     Tcl_HashEntry *hPtr2 = Tcl_FindHashEntry(AccessibleAttributes, "name");
     if (!hPtr2) {
 	return @"";
     }
 
-    Tcl_Obj *nameObj = Tcl_GetHashValue(hPtr2);
+    Tcl_Obj *nameObj = (Tcl_Obj *)Tcl_GetHashValue(hPtr2);
     if (!nameObj) {
 	return @"";
     }
@@ -406,13 +406,13 @@ void PostAccessibilityAnnouncement(NSString *message)
 	return nil;
     }
 
-    AccessibleAttributes = Tcl_GetHashValue(hPtr);
+    AccessibleAttributes = (Tcl_HashTable *)Tcl_GetHashValue(hPtr);
     hPtr2=Tcl_FindHashEntry(AccessibleAttributes, "help");
     if (!hPtr2) {
 	return nil;
     }
 
-    char *result = Tcl_GetString(Tcl_GetHashValue(hPtr2));
+    char *result = Tcl_GetString((Tcl_Obj *)Tcl_GetHashValue(hPtr2));
     NSString *machelp = [NSString stringWithUTF8String:result];
     return machelp;
 }
@@ -525,7 +525,7 @@ void PostAccessibilityAnnouncement(NSString *message)
      * accessibility parent.
      */
     if (winPtr->window) {
-	TKContentView *view = TkMacOSXGetRootControl(winPtr->window);
+	TKContentView *view = (TKContentView *)TkMacOSXGetRootControl(winPtr->window);
 	if (!view || ![view isKindOfClass:[TKContentView class]]) {
 	    return nil;
 	}
@@ -564,13 +564,13 @@ void PostAccessibilityAnnouncement(NSString *message)
 	return NO;
     }
 
-    AccessibleAttributes = Tcl_GetHashValue(hPtr);
+    AccessibleAttributes = (Tcl_HashTable *)Tcl_GetHashValue(hPtr);
     hPtr2=Tcl_FindHashEntry(AccessibleAttributes, "state");
     if (!hPtr2) {
 	return NO;
     }
 
-    char *result = Tcl_GetString(Tcl_GetHashValue(hPtr2));
+    char *result = Tcl_GetString((Tcl_Obj *)Tcl_GetHashValue(hPtr2));
     if (strcmp(result, "disabled") == 0) {
 	return YES;
     }
@@ -616,16 +616,16 @@ void PostAccessibilityAnnouncement(NSString *message)
 	return FALSE;
     }
 
-    AccessibleAttributes = Tcl_GetHashValue(hPtr);
+    AccessibleAttributes = (Tcl_HashTable *)Tcl_GetHashValue(hPtr);
     hPtr2 = Tcl_FindHashEntry(AccessibleAttributes, "action");
     if (!hPtr2) {
 	return FALSE;
     }
-    char *action = Tcl_GetString(Tcl_GetHashValue(hPtr2));
+    char *action = Tcl_GetString((Tcl_Obj *)Tcl_GetHashValue(hPtr2));
 
 
     callback_command = action;
-    event = (Tcl_Event *)ckalloc(sizeof(Tcl_Event));
+    event = (Tcl_Event *)Tcl_Alloc(sizeof(Tcl_Event));
     event->proc = ActionEventProc;
     Tcl_QueueEvent((Tcl_Event *)event, TCL_QUEUE_TAIL);
 
@@ -650,13 +650,13 @@ void PostAccessibilityAnnouncement(NSString *message)
 	return 0;
     }
 
-    Tcl_HashTable *AccessibleAttributes = Tcl_GetHashValue(hPtr);
+    Tcl_HashTable *AccessibleAttributes = (Tcl_HashTable *)Tcl_GetHashValue(hPtr);
     Tcl_HashEntry *hPtr2 = Tcl_FindHashEntry(AccessibleAttributes, "role");
     if (!hPtr2) {
 	return 0;
     }
 
-    const char *result = Tcl_GetString(Tcl_GetHashValue(hPtr2));
+    const char *result = Tcl_GetString((Tcl_Obj *)Tcl_GetHashValue(hPtr2));
     if (!result) {
 	return 0;
     }
@@ -746,8 +746,8 @@ static int ActionEventProc(
 static void InitAccessibilityHashTables(void)
 {
     if (!accessibilityTablesInitialized) {
-	TkWindowToElementTable = (Tcl_HashTable *)ckalloc(sizeof(Tcl_HashTable));
-	ElementToTkWindowTable = (Tcl_HashTable *)ckalloc(sizeof(Tcl_HashTable));
+	TkWindowToElementTable = (Tcl_HashTable *)Tcl_Alloc(sizeof(Tcl_HashTable));
+	ElementToTkWindowTable = (Tcl_HashTable *)Tcl_Alloc(sizeof(Tcl_HashTable));
 
 	Tcl_InitHashTable(TkWindowToElementTable, TCL_ONE_WORD_KEYS);
 	Tcl_InitHashTable(ElementToTkWindowTable, TCL_ONE_WORD_KEYS);
@@ -855,8 +855,8 @@ void TkAccessibility_CleanupHashTables(void)
     Tcl_DeleteHashTable(TkWindowToElementTable);
     Tcl_DeleteHashTable(ElementToTkWindowTable);
 
-    ckfree((char *)TkWindowToElementTable);
-    ckfree((char *)ElementToTkWindowTable);
+    Tcl_Free(TkWindowToElementTable);
+    Tcl_Free(ElementToTkWindowTable);
 
     TkWindowToElementTable = NULL;
     ElementToTkWindowTable = NULL;
@@ -882,7 +882,7 @@ void TkAccessibility_CleanupHashTables(void)
 int IsVoiceOverRunning(
     TCL_UNUSED(void *), /* clientData */
     Tcl_Interp *ip,
-    TCL_UNUSED(int), /* objc */
+    TCL_UNUSED(Tcl_Size), /* objc */
     TCL_UNUSED(Tcl_Obj *const *)) /* objv */
 {
     int result = 0;
@@ -922,7 +922,7 @@ int IsVoiceOverRunning(
 static int EmitSelectionChanged(
     TCL_UNUSED(void *), /* clientData */
     Tcl_Interp *ip,
-    int objc,
+    Tcl_Size objc,
     Tcl_Obj *const objv[])
 {
     if (objc < 2) {
@@ -1047,7 +1047,7 @@ static void TkMacOSXAccessibility_DestroyHandler(void *clientData, XEvent *event
 static int TkMacOSXAccessibleObjCmd(
     TCL_UNUSED(void *), /* clientData */
     Tcl_Interp *ip,
-    int objc,
+    Tcl_Size objc,
     Tcl_Obj *const objv[])
 {
     if (objc < 2) {
@@ -1105,9 +1105,9 @@ int TkMacOSXAccessibility_Init(Tcl_Interp * interp)
 {
 
     NSAutoreleasePool * pool = [[NSAutoreleasePool alloc] init];
-    Tcl_CreateObjCommand(interp, "::tk::accessible::add_acc_object", TkMacOSXAccessibleObjCmd, NULL, NULL);
-    Tcl_CreateObjCommand(interp, "::tk::accessible::emit_selection_change", EmitSelectionChanged, NULL, NULL);
-    Tcl_CreateObjCommand(interp, "::tk::accessible::check_screenreader", IsVoiceOverRunning, NULL, NULL);
+    Tcl_CreateObjCommand2(interp, "::tk::accessible::add_acc_object", TkMacOSXAccessibleObjCmd, NULL, NULL);
+    Tcl_CreateObjCommand2(interp, "::tk::accessible::emit_selection_change", EmitSelectionChanged, NULL, NULL);
+    Tcl_CreateObjCommand2(interp, "::tk::accessible::check_screenreader", IsVoiceOverRunning, NULL, NULL);
     [pool release];
     return TCL_OK;
 }

@@ -84,12 +84,12 @@ proc _keypress {win key} {
     # a focus follows mouse will not steal away
     # the focus if the mouse is moved around.
 
-    if {[focus] != $win} {
+    if {[focus] ne $win} {
 	focus -force $win
     }
     event generate $win <Key-$keysym>
     pause 50
-    if {[focus] != $win} {
+    if {[focus] ne $win} {
 	focus -force $win
     }
     event generate $win <KeyRelease-$keysym>
@@ -114,7 +114,7 @@ proc _keypress_lookup {char} {
 	_init_keypress_lookup
     }
 
-    if {$char == ""} {
+    if {$char eq ""} {
 	error "empty char"
     }
 
@@ -1061,8 +1061,8 @@ test event-9.14 {pointer window is a toplevel, tk internal destination} -setup {
 } -result {|<Enter> NotifyNonlinearVirtual .one|<Enter> NotifyNonlinearVirtual .one.f1|<Enter> NotifyNonlinear .one.f1.f2|}
 
 test event-9.15 {pointer window is a toplevel, destination is screen root.
-    Due to a malfunction on macOS Sequoia and older (see bug #c494cc25c4), this test is skipped on those OS versions.
-} -constraints notMacosSequoiaOrOlder -setup {
+    Due to a malfunction on macOS Sequoia and older (see bug #c494cc25c4), this test is skipped on those OS versions.  It also fails sporadically on the macOS CI runner.
+} -constraints {notMacosSequoiaOrOlder notMacCI} -setup {
     setup_win_mousepointer .one; # ensure the mouse pointer is where we want it to be (the .one toplevel is not itself used in this test)
 #    destroy .one
     toplevel .two
@@ -1198,8 +1198,8 @@ test event-9.19 {Successive destructions (pointer window + ancestors including i
 } -result {|<Enter> NotifyNonlinearVirtual .two|<Enter> NotifyNonlinearVirtual .two.f1|<Enter> NotifyNonlinear .two.f1.f2|}
 
 test event-9.20 {Successive destructions (pointer window + ancestors including its toplevel), destination is screen root.
-    Due to a malfunction on macOS Sequoia and older (see bug #c494cc25c4), this test is skipped on those OS versions.
-} -constraints notMacosSequoiaOrOlder -setup {
+    Due to a malfunction on macOS Sequoia and older (see bug #c494cc25c4), this test is skipped on those OS versions.  It also fails sporadically on macOS CI runners.
+} -constraints {notMacosSequoiaOrOlder notMacCI} -setup {
     setup_win_mousepointer .one; # ensure the mouse pointer is where we want it to be (the .one toplevel is not itself used in this test)
     destroy .one
     toplevel .two

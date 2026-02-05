@@ -174,8 +174,8 @@ PROTO_FLAGS		=
 # To enable memory debugging reverse the comment characters on the following
 # lines or call configure with --enable-symbols=mem
 # Warning:  if you enable memory debugging, you must do it *everywhere*,
-# including all the code that calls Tcl, and you must use ckalloc and
-# ckfree everywhere instead of malloc and free.
+# including all the code that calls Tcl, and you must use Tcl_Alloc and
+# Tcl_Free everywhere instead of malloc and free.
 MEM_DEBUG_FLAGS		=
 #MEM_DEBUG_FLAGS	= -DTCL_MEM_DEBUG
 
@@ -1745,8 +1745,6 @@ dist: $(UNIX_DIR)/configure $(UNIX_DIR)/tkConfig.h.in $(UNIX_DIR)/tk.pc.in \
 		$(MAC_OSX_DIR)/*.ac $(MAC_OSX_DIR)/*.sdef \
 		$(DISTDIR)/macosx
 	$(DIST_INSTALL_DATA) $(TOP_DIR)/license.terms $(DISTDIR)/macosx
-	$(INSTALL_DATA_DIR) $(DISTDIR)/compat
-	$(DIST_INSTALL_DATA) $(TOP_DIR)/license.terms $(DISTDIR)/compat
 	$(INSTALL_DATA_DIR) $(DISTDIR)/xlib
 	$(DIST_INSTALL_DATA) $(XLIB_DIR)/*.[ch] $(DISTDIR)/xlib
 	$(DIST_INSTALL_DATA) $(TOP_DIR)/license.terms $(DISTDIR)/xlib

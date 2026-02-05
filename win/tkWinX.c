@@ -154,22 +154,42 @@ TkGetServerInfo(
     TCL_UNUSED(Tk_Window))		/* Token for window; this selects a particular
 				 * display and server. */
 {
-    static char buffer[32]; /* Empty string means not initialized yet. */
+    char buffer[80];
     OSVERSIONINFOW os;
+    typedef int(__stdcall getVersionProc)(void *);
 
-    if (!buffer[0]) {
-	GetVersionExW(&os);
-	/* Write the first character last, preventing multi-thread issues. */
-	snprintf(buffer+1, sizeof(buffer)-1, "indows %d.%d %d %s", (int)os.dwMajorVersion,
-		(int)os.dwMinorVersion, (int)os.dwBuildNumber,
-#ifdef _WIN64
-		"Win64"
-#else
-		"Win32"
-#endif
-	);
-	buffer[0] = 'W';
+    /*
+     * Not a performance critical so don't bother with static cache and MT
+     * synchronization
+     */
+
+    /*
+     * GetVersionExW will not return the "real" Windows version so use
+     * RtlGetVersion if available and falling back.
+     */
+    HMODULE handle = GetModuleHandleW(L"NTDLL"); /* No need to free this */
+    getVersionProc *getVersion =
+	(getVersionProc *)(void *)GetProcAddress(handle, "RtlGetVersion");
+
+    os.dwOSVersionInfoSize = sizeof(os);
+    if (getVersion == NULL || getVersion(&os) != 0) {
+	/* Should never happen but ... */
+	if (!GetVersionExW(&os)) {
+	    memset(&os, 0, sizeof(os));
+	}
     }
+    if (os.dwMajorVersion == 10 &&
+	os.dwBuildNumber >= 22000) {
+	os.dwMajorVersion = 11;
+    }
+    snprintf(buffer, sizeof(buffer), "Windows %d.%d %d %s",
+	(int)os.dwMajorVersion, (int)os.dwMinorVersion, (int)os.dwBuildNumber,
+#ifdef _WIN64
+	"Win64"
+#else
+	"Win32"
+#endif
+    );
     Tcl_AppendResult(interp, buffer, NULL);
 }
 
@@ -417,9 +437,9 @@ TkWinDisplayChanged(
     screen->root_depth = GetDeviceCaps(dc, BITSPIXEL) * PTR2INT(screen->ext_data);
 
     if (screen->root_visual != NULL) {
-	ckfree(screen->root_visual);
+	Tcl_Free(screen->root_visual);
     }
-    screen->root_visual = (Visual *)ckalloc(sizeof(Visual));
+    screen->root_visual = (Visual *)Tcl_Alloc(sizeof(Visual));
     screen->root_visual->visualid = 0;
     if (GetDeviceCaps(dc, RASTERCAPS) & RC_PALETTE) {
 	DefaultVisualOfScreen(screen)->map_entries = GetDeviceCaps(dc, SIZEPALETTE);
@@ -498,7 +518,7 @@ TkpOpenDisplay(
     display = XkbOpenDisplay(display_name, NULL, NULL, NULL, NULL, NULL);
     TkWinDisplayChanged(display);
 
-    tsdPtr->winDisplay =(TkDisplay *) ckalloc(sizeof(TkDisplay));
+    tsdPtr->winDisplay =(TkDisplay *)Tcl_Alloc(sizeof(TkDisplay));
     memset(tsdPtr->winDisplay, 0, sizeof(TkDisplay));
     tsdPtr->winDisplay->display = display;
     tsdPtr->updatingClipboard = FALSE;
@@ -525,9 +545,9 @@ XkbOpenDisplay(
 	int *minor_rtrn,
 	int *reason)
 {
-    _XPrivDisplay display = (_XPrivDisplay)ckalloc(sizeof(Display));
-    Screen *screen = (Screen *)ckalloc(sizeof(Screen));
-    TkWinDrawable *twdPtr = (TkWinDrawable *)ckalloc(sizeof(TkWinDrawable));
+    _XPrivDisplay display = (_XPrivDisplay)Tcl_Alloc(sizeof(Display));
+    Screen *screen = (Screen *)Tcl_Alloc(sizeof(Screen));
+    TkWinDrawable *twdPtr = (TkWinDrawable *)Tcl_Alloc(sizeof(TkWinDrawable));
 
     memset(screen, 0, sizeof(Screen));
     memset(display, 0, sizeof(Display));
@@ -550,7 +570,7 @@ XkbOpenDisplay(
     screen->root = (Window)twdPtr;
     screen->display = (Display *)display;
 
-    display->display_name = (char  *)ckalloc(strlen(name) + 1);
+    display->display_name = (char  *)Tcl_Alloc(strlen(name) + 1);
     strcpy(display->display_name, name);
 
     display->nscreens = 1;
@@ -599,21 +619,21 @@ TkpCloseDisplay(
     tsdPtr->winDisplay = NULL;
 
     if (display->display_name != NULL) {
-	ckfree(display->display_name);
+	Tcl_Free(display->display_name);
     }
     if (ScreenOfDisplay(display, 0) != NULL) {
 	if (DefaultVisualOfScreen(ScreenOfDisplay(display, 0)) != NULL) {
-	    ckfree(DefaultVisualOfScreen(ScreenOfDisplay(display, 0)));
+	    Tcl_Free(DefaultVisualOfScreen(ScreenOfDisplay(display, 0)));
 	}
 	if (RootWindowOfScreen(ScreenOfDisplay(display, 0)) != None) {
-	    ckfree((void *)RootWindowOfScreen(ScreenOfDisplay(display, 0)));
+	    Tcl_Free((void *)RootWindowOfScreen(ScreenOfDisplay(display, 0)));
 	}
 	if (DefaultColormapOfScreen(ScreenOfDisplay(display, 0)) != None) {
 	    XFreeColormap(display, DefaultColormapOfScreen(ScreenOfDisplay(display, 0)));
 	}
-	ckfree(ScreenOfDisplay(display, 0));
+	Tcl_Free(ScreenOfDisplay(display, 0));
     }
-    ckfree(display);
+    Tcl_Free(display);
 }
 
 /*
@@ -1598,7 +1618,7 @@ HandleIMEComposition(
     n = ImmGetCompositionStringW(hIMC, GCS_RESULTSTR, NULL, 0);
 
     if (n > 0) {
-	WCHAR *buff = (WCHAR *) ckalloc(n);
+	WCHAR *buff = (WCHAR *)Tcl_Alloc(n);
 	TkWindow *winPtr;
 	XEvent event;
 	int i;
@@ -1652,7 +1672,7 @@ HandleIMEComposition(
 	    Tk_QueueWindowEvent(&event, TCL_QUEUE_TAIL);
 	}
 
-	ckfree(buff);
+	Tcl_Free(buff);
     }
     ImmReleaseContext(hwnd, hIMC);
     return 1;
