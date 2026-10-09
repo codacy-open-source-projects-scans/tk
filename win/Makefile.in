@@ -92,6 +92,8 @@ TCL_GENERIC_DIR		= @TCL_SRC_DIR@/generic
 # The directory containing the platform specific Tcl sources and headers
 # appropriate for this version of Tk:
 TCL_PLATFORM_DIR	= @TCL_SRC_DIR@/win
+TCL_INCLUDES		= @TCL_INCLUDES@
+TCL_RC_INCLUDE_DIR	= @TCL_RC_INCLUDE_DIR@
 
 TCL_TOOL_DIR		= @TCL_SRC_DIR@/tools
 
@@ -258,7 +260,7 @@ ZIP_INSTALL_OBJS =  @ZIP_INSTALL_OBJS@
 CC_SWITCHES = ${CFLAGS} ${CFLAGS_WARNING} ${SHLIB_CFLAGS} \
 -I"${GENERIC_DIR_NATIVE}" -I"${WIN_DIR_NATIVE}" \
 -I"${XLIB_DIR_NATIVE}" -I"${BITMAP_DIR_NATIVE}" \
--I"${TCL_GENERIC_NATIVE}" -I"${TCL_PLATFORM_NATIVE}" \
+${TCL_INCLUDES} \
 ${AC_FLAGS} $(NO_DEPRECATED_FLAGS) -DUSE_TCL_STUBS
 
 CC_OBJNAME = @CC_OBJNAME@
@@ -322,6 +324,11 @@ TK_OBJS = \
 	tkWinWm.$(OBJEXT) \
 	tkWinX.$(OBJEXT) \
 	stubs.$(OBJEXT) \
+	dictionaries.$(OBJEXT) \
+	khmer.$(OBJEXT) \
+	lao.$(OBJEXT) \
+	thai.$(OBJEXT) \
+	mojibake.$(OBJEXT) \
 	tk3d.$(OBJEXT) \
 	tkAccessibility.$(OBJEXT) \
 	tkArgv.$(OBJEXT) \
@@ -392,6 +399,7 @@ TK_OBJS = \
 	tkText.$(OBJEXT) \
 	tkTextBTree.$(OBJEXT) \
 	tkTextDisp.$(OBJEXT) \
+	tkTextGrapheme.$(OBJEXT) \
 	tkTextImage.$(OBJEXT) \
 	tkTextIndex.$(OBJEXT) \
 	tkTextMark.$(OBJEXT) \
@@ -423,6 +431,7 @@ TTK_OBJS = \
 	ttkLabel.$(OBJEXT) \
 	ttkLayout.$(OBJEXT) \
 	ttkManager.$(OBJEXT) \
+	ttkNodeCache.$(OBJEXT) \
 	ttkNotebook.$(OBJEXT) \
 	ttkPanedwindow.$(OBJEXT) \
 	ttkProgress.$(OBJEXT) \
@@ -687,7 +696,6 @@ $(WISH): $(WISH_OBJS) @LIBRARIES@ $(TK_STUB_LIB_FILE) wish.$(RES) ${TK_ZIP_FILE}
 	$(CC) $(CFLAGS) $(WISH_OBJS) $(TK_LIB_FILE) \
 	$(TK_STUB_LIB_FILE) $(TCL_LIB_FILE) $(LIBS) \
 	wish.$(RES) $(CC_EXENAME) $(LDFLAGS_WINDOW)
-	@VC_MANIFEST_EMBED_EXE@
 	@if test "${ZIPFS_BUILD}" = "2" ; then \
 		cat ${TK_ZIP_FILE} >> ${WISH}; \
 	fi
@@ -698,7 +706,6 @@ $(TKTEST): testMain.$(OBJEXT) $(TEST_DLL_FILE) @LIBRARIES@ $(TK_STUB_LIB_FILE) w
 	$(CC) $(CFLAGS) testMain.$(OBJEXT) $(TEST_LIB_FILE) $(TK_LIB_FILE) \
 	$(TK_STUB_LIB_FILE) $(TCL_LIB_FILE) $(LIBS) \
 	wish.$(RES) $(CC_EXENAME) $(LDFLAGS_WINDOW)
-	@VC_MANIFEST_EMBED_EXE@
 
 ${TEST_DLL_FILE}: ${TKTEST_OBJS} ${TK_STUB_LIB_FILE}
 	@MAKE_DLL@ ${TKTEST_OBJS} $(TK_STUB_LIB_FILE) $(SHLIB_LD_LIBS)
@@ -756,7 +763,6 @@ ${TK_STUB_LIB_FILE}: ${STUB_OBJS}
 ${TK_DLL_FILE}: ${TK_OBJS} $(TK_RES) ${TK_ZIP_FILE}
 	@$(RM) ${TK_DLL_FILE}
 	@MAKE_DLL@ ${TK_OBJS} $(TK_RES) $(SHLIB_LD_LIBS)
-	@VC_MANIFEST_EMBED_DLL@
 	@if test "${ZIPFS_BUILD}" = "1" ; then \
 		cat ${TK_ZIP_FILE} >> ${TK_DLL_FILE}; \
 	fi
@@ -825,7 +831,7 @@ tkMain2.$(OBJEXT): configure Makefile
 	$(CC) -c $(CC_SWITCHES) -DBUILD_tk -DBUILD_ttk @DEPARG@ $(CC_OBJNAME)
 
 .rc.$(RES):
-	$(RC) @RC_OUT@ $@ @RC_TYPE@ @RC_DEFINES@ @RC_INCLUDE@ "$(GENERIC_DIR_NATIVE)" @RC_INCLUDE@ "$(TCL_GENERIC_NATIVE)" @RC_INCLUDE@ "$(RC_DIR_NATIVE)" @DEPARG@
+	$(RC) @RC_OUT@ $@ @RC_TYPE@ @RC_DEFINES@ @RC_INCLUDE@ "$(GENERIC_DIR_NATIVE)" @RC_INCLUDE@ "$(TCL_RC_INCLUDE_DIR)" @RC_INCLUDE@ "$(RC_DIR_NATIVE)" @DEPARG@
 
 depend:
 

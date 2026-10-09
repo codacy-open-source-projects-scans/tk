@@ -14,10 +14,21 @@
  */
 
 #include "tkWinInt.h"
+#include <dwmapi.h>
 #include <wtypes.h>
 #include <shobjidl.h>
 #include <shlguid.h>
 #include "tkWinIco.h"
+
+
+/*
+    DWMWA_USE_IMMERSIVE_DARK_MODE = 20 (Windows 10/11)
+    For older Windows 10 versions, use 19
+*/
+
+#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#define DWMWA_OLD_USE_IMMERSIVE_DARK_MODE 19
+
 /*
  * These next two defines are only valid on Win2K/XP+.
  */
@@ -269,6 +280,15 @@ typedef struct TkWmInfo {
  * WM_FULLSCREEN -		Non-zero means that this window has been placed
  *				in the full screen mode. It should be mapped at
  *				0,0 and be the width and height of the screen.
+ * WM_OVERRIDE_APPEARANCE	App overrides the system AppsUseLightMode setting.
+ * WM_APPEARANCE_DARK		Second bit to encode the toplevel appearance mode.
+ *				Possible values are:
+ *				AUTO=1,DARK=0: auto mode
+ *				AUTO=0,DARK=0: light mode
+ *				AUTO=0,DARK=1: dark mode
+ *				AUTO=1,DARK=1: undefined, may not happen
+ *				Note: auto mode means that the system decides.
+ * WM_APPEARANCE_PENDING	Set when an AppearanceIdleProc call is pending,
  */
 
 #define WM_NEVER_MAPPED			(1<<0)
@@ -285,6 +305,9 @@ typedef struct TkWmInfo {
 #define WM_HEIGHT_NOT_RESIZABLE		(1<<11)
 #define WM_WITHDRAWN			(1<<12)
 #define WM_FULLSCREEN			(1<<13)
+#define WM_OVERRIDE_APPEARANCE		(1<<14)
+#define WM_APPEARANCE_DARK		(1<<15)
+#define WM_APPEARANCE_PENDING		(1<<16)
 
 /*
  * Window styles for various types of toplevel windows.
@@ -363,10 +386,20 @@ static UINT TaskbarButtonCreatedMessageId = WM_NULL;
 /* Reference to taskbarlist API for overlay icons. */
 ITaskbarList3 *ptbl;
 
+/* Attribute -appearance strings and enum values */
+static const char *const AttributeAppearanceStrings[] = {
+    "light", "dark", "auto", NULL
+};
+enum AttributeAppearances {
+    APPEARANCE_LIGHT, APPEARANCE_DARK, APPEARANCE_AUTO
+};
+
 /*
  * Forward declarations for functions defined in this file:
  */
 
+static bool		AppsShouldUseLightTheme();
+static inline const char *	AppearanceStringGet(int flags);
 static int		ActivateWindow(Tcl_Event *evPtr, int flags);
 static void		ConfigureTopLevel(WINDOWPOS *pos);
 static void		GenerateConfigureNotify(TkWindow *winPtr);
@@ -513,6 +546,9 @@ static int		WmWithdrawCmd(Tk_Window tkwin,
 			    TkWindow *winPtr, Tcl_Interp *interp, Tcl_Size objc,
 			    Tcl_Obj *const objv[]);
 static void		WmUpdateGeom(WmInfo *wmPtr, TkWindow *winPtr);
+static int		SynchronizeAppearance(TkWindow *winPtr);
+static void		AppearanceIdleProc(void *clientData);
+
 
 /*
  *----------------------------------------------------------------------
@@ -1983,10 +2019,31 @@ UpdateWrapper(
 	 */
 
 	if (wmPtr->flags & WM_FULLSCREEN) {
-	    x = 0;
-	    y = 0;
-	    width = WidthOfScreen(Tk_Screen(winPtr));
-	    height = HeightOfScreen(Tk_Screen(winPtr));
+	    /*
+	     * Cover the monitor the window currently is on, not always the
+	     * primary one.
+	     */
+
+	    RECT winRect;
+	    MONITORINFO mi;
+
+	    winRect.left = wmPtr->x;
+	    winRect.top = wmPtr->y;
+	    winRect.right = wmPtr->x + width;
+	    winRect.bottom = wmPtr->y + height;
+	    mi.cbSize = sizeof(mi);
+	    if (GetMonitorInfoW(MonitorFromRect(&winRect,
+		    MONITOR_DEFAULTTONEAREST), &mi)) {
+		x = mi.rcMonitor.left;
+		y = mi.rcMonitor.top;
+		width = mi.rcMonitor.right - mi.rcMonitor.left;
+		height = mi.rcMonitor.bottom - mi.rcMonitor.top;
+	    } else {
+		x = 0;
+		y = 0;
+		width = WidthOfScreen(Tk_Screen(winPtr));
+		height = HeightOfScreen(Tk_Screen(winPtr));
+	    }
 	} else if (!(wmPtr->sizeHintsFlags & (USPosition | PPosition))
 		&& (wmPtr->flags & WM_NEVER_MAPPED)) {
 	    x = CW_USEDEFAULT;
@@ -2112,6 +2169,8 @@ UpdateWrapper(
     }
 
     wmPtr->flags &= ~WM_NEVER_MAPPED;
+    wmPtr->flags |= WM_APPEARANCE_PENDING;
+    Tcl_DoWhenIdle(AppearanceIdleProc, winPtr);
     if (winPtr->flags & TK_EMBEDDED &&
 	    SendMessageW(wmPtr->wrapper, TK_ATTACHWINDOW, (WPARAM) child, 0)) {
 	SendMessageW(wmPtr->wrapper, TK_GEOMETRYREQ,
@@ -2201,8 +2260,16 @@ UpdateWrapper(
      */
 
     if (tsdPtr->firstWindow) {
-	tsdPtr->firstWindow = 0;
-	SetActiveWindow(wmPtr->wrapper);
+	/*
+	 * Do not waste the activation on an invisible window, e.g. the
+	 * withdrawn console. [Bug 2effa4b316]
+	 */
+
+	state = wmPtr->hints.initial_state;
+	if (state == NormalState || state == ZoomState) {
+	    tsdPtr->firstWindow = 0;
+	    SetActiveWindow(wmPtr->wrapper);
+	}
     } else if (focusHWND) {
 	SetFocus(focusHWND);
     }
@@ -2616,6 +2683,9 @@ TkWmDeadWindow(
     if (wmPtr->flags & WM_UPDATE_PENDING) {
 	Tcl_CancelIdleCall(UpdateGeometryInfo, winPtr);
     }
+    if (wmPtr->flags & WM_APPEARANCE_PENDING) {
+	Tcl_CancelIdleCall(AppearanceIdleProc, winPtr);
+    }
     if (wmPtr->containerPtr != NULL) {
 	wmPtr2 = wmPtr->containerPtr->wmInfoPtr;
 
@@ -2980,14 +3050,17 @@ WmAttributesCmd(
     const char *string;
     int boolValue;
     Tcl_Size i, length;
-    int config_fullscreen = 0, updatewrapper = 0;
-    int fullscreen_attr_changed = 0, fullscreen_attr = 0;
+    bool config_appearance = 0, config_fullscreen = 0, updatewrapper = 0;
+    bool fullscreen_attr_changed = 0, fullscreen_attr = 0;
+    enum AttributeAppearances appearanceAttrValue = APPEARANCE_LIGHT;
+    bool appearanceAttrChanged = 0;
 
     if ((objc < 3) || ((objc > 5) && ((objc%2) == 0))) {
     configArgs:
 	Tcl_WrongNumArgs(interp, 2, objv,
 		"window"
 		" ?-alpha ?double??"
+		" ?-appearance ?light|dark??"
 		" ?-transparentcolor ?color??"
 		" ?-disabled ?bool??"
 		" ?-fullscreen ?bool??"
@@ -3002,6 +3075,11 @@ WmAttributesCmd(
 	Tcl_ListObjAppendElement(NULL, objPtr,
 		Tcl_NewStringObj("-alpha", TCL_INDEX_NONE));
 	Tcl_ListObjAppendElement(NULL, objPtr, Tcl_NewDoubleObj(wmPtr->alpha));
+	Tcl_ListObjAppendElement(NULL, objPtr,
+		Tcl_NewStringObj("-appearance", TCL_INDEX_NONE));
+	Tcl_ListObjAppendElement(NULL, objPtr,
+		Tcl_NewStringObj(AppearanceStringGet(wmPtr->flags),
+		TCL_INDEX_NONE));
 	Tcl_ListObjAppendElement(NULL, objPtr,
 		Tcl_NewStringObj("-transparentcolor", TCL_INDEX_NONE));
 	Tcl_ListObjAppendElement(NULL, objPtr,
@@ -3030,8 +3108,9 @@ WmAttributesCmd(
 	if (strncmp(string, "-disabled", length) == 0) {
 	    stylePtr = &style;
 	    styleBit = WS_DISABLED;
-	} else if ((strncmp(string, "-alpha", length) == 0)
-		|| ((length > 2) && (strncmp(string, "-transparentcolor",
+	} else if ((length > 2)
+		&& ((strncmp(string, "-alpha", length) == 0)
+		|| (strncmp(string, "-transparentcolor",
 			length) == 0))) {
 	    stylePtr = &exStyle;
 	    styleBit = WS_EX_LAYERED;
@@ -3048,6 +3127,14 @@ WmAttributesCmd(
 		 */
 		updatewrapper = 1;
 	    }
+	} else if ((length > 2)
+		&& (strncmp(string, "-appearance", length) == 0)) {
+	    config_appearance = 1;
+	    styleBit = 0;
+	} else if ((length > 2)
+		&& (strncmp(string, "-disabled", length) == 0)) {
+	    stylePtr = &style;
+	    styleBit = WS_DISABLED;
 	} else if ((length > 3)
 		&& (strncmp(string, "-topmost", length) == 0)) {
 	    stylePtr = &exStyle;
@@ -3061,7 +3148,7 @@ WmAttributesCmd(
 	    }
 	} else if (i == 3) {
 	    Tcl_SetObjResult(interp, Tcl_ObjPrintf(
-		    "bad attribute \"%s\": must be -alpha, -disabled, -fullscreen, -toolwindow, -topmost, or -transparentcolor",
+		    "bad attribute \"%s\": must be -alpha, -appearance, -disabled, -fullscreen, -toolwindow, -topmost, or -transparentcolor",
 		    string));
 	    Tcl_SetErrorCode(interp, "TK", "WM", "ATTR", "UNRECOGNIZED", (char *)NULL);
 	    return TCL_ERROR;
@@ -3154,11 +3241,27 @@ WmAttributesCmd(
 	    }
 	} else {
 	    if ((i < objc-1)
+		    && ! config_appearance
 		    && Tcl_GetBooleanFromObj(interp, objv[i+1], &boolValue)
 			    != TCL_OK) {
 		return TCL_ERROR;
 	    }
-	    if (config_fullscreen) {
+	    if (config_appearance) {
+		if (objc == 4) {
+		    Tcl_SetObjResult(interp, Tcl_NewStringObj(
+			    AppearanceStringGet(wmPtr->flags),
+			    TCL_INDEX_NONE));
+		} else {
+		    int index;
+		    if (Tcl_GetIndexFromObj(interp, objv[i+1], AttributeAppearanceStrings,
+			    "appearancename", 0, &index) != TCL_OK) {
+			return TCL_ERROR;
+		    }
+		    appearanceAttrValue = index;
+		    appearanceAttrChanged = true;
+		}
+		config_appearance = 0;
+	    } else if (config_fullscreen) {
 		if (objc == 4) {
 		    Tcl_SetObjResult(interp, Tcl_NewWideIntObj(
 			    (wmPtr->flags & WM_FULLSCREEN) != 0));
@@ -3214,6 +3317,95 @@ WmAttributesCmd(
 	    }
 	}
     }
+    if (appearanceAttrChanged) {
+
+	long long isDark; /* Alignment matters for this! */
+	/*
+	 * Check for embedded window
+	 * Note: this may not be needed, as the command below will fail anyway
+	 */
+
+	if ((winPtr->flags & TK_EMBEDDED)) {
+	    Tcl_SetObjResult(interp, Tcl_ObjPrintf(
+		"can't set appearance attribute for embedded window \"%s\":",
+		winPtr->pathName));
+	    Tcl_SetErrorCode(interp, "TK", "WM", "ATTR",
+		    "APPEARANCE", (char *)NULL);
+	    return TCL_ERROR;
+	}
+
+	/*
+	 * Translate the appearance mode to isDark 0/1 value.  The AUTO
+	 * appearance uses the AppsUseLightTheme registry variable.
+	 */
+
+	if (appearanceAttrValue == APPEARANCE_AUTO) {
+	    isDark = (long long) !AppsShouldUseLightTheme();
+	} else {
+	    isDark = (long long) ((appearanceAttrValue == APPEARANCE_DARK) ?
+				  1 : 0);
+	};
+
+	/*
+	 * The following will fail if the Window is not physically visible.
+	 * In Tcl the command line:
+	 * toplevel .t ; wm attributes .t -appearance d
+	 * will produce an error.  This is because the window handle
+	 * is not valid when this is called.
+	 */
+
+	long status = DwmSetWindowAttribute(
+		wmPtr->wrapper,
+		DWMWA_USE_IMMERSIVE_DARK_MODE,
+		&isDark,
+		sizeof(isDark));
+	if (status == (long)0x80070006L) {
+	    Tcl_SetObjResult(interp, Tcl_ObjPrintf(
+		"too early to set appearance attribute for \"%s\"",
+		 winPtr->pathName));
+	    Tcl_SetErrorCode(interp, "TK", "WM", "ATTR",
+		    "APPEARANCE", (char *)NULL);
+	    return TCL_ERROR;
+	}
+	if (status != S_OK){
+	    Tcl_SetObjResult(interp, Tcl_ObjPrintf(
+		"can't set appearance attribute for \"%s\": status %lx",
+		winPtr->pathName, status));
+	    Tcl_SetErrorCode(interp, "TK", "WM", "ATTR",
+		"APPEARANCE", (char *)NULL);
+	    return TCL_ERROR;
+	}
+
+	/*
+	 * On Windows 10 (unlike on 11) the title bar doesn't redraw
+	 * automatically after changing the `DWMWA_USE_IMMERSIVE_DARK_MODE`
+	 * attribute. To trigger a redraw, we'll have to toggle the nonclient
+	 * area's focus state.
+	 */
+	bool isWindowFocused = GetForegroundWindow() == wmPtr->wrapper;
+
+	SendMessageW(wmPtr->wrapper, WM_NCACTIVATE, !isWindowFocused, 0);
+	SendMessageW(wmPtr->wrapper, WM_NCACTIVATE, isWindowFocused, 0);
+
+	/*
+	 * On success, set the mode value
+	 */
+	switch (appearanceAttrValue) {
+	case APPEARANCE_LIGHT:
+	    wmPtr->flags |= WM_OVERRIDE_APPEARANCE;
+	    wmPtr->flags &= ~WM_APPEARANCE_DARK;
+	    break;
+	case APPEARANCE_DARK:
+	    wmPtr->flags |= WM_OVERRIDE_APPEARANCE;
+	    wmPtr->flags |= WM_APPEARANCE_DARK;
+	    break;
+	case APPEARANCE_AUTO:
+	    default:
+	    wmPtr->flags &= ~WM_OVERRIDE_APPEARANCE;
+	    wmPtr->flags &= ~WM_APPEARANCE_DARK;
+	    break;
+	}
+    }
     if (fullscreen_attr_changed) {
 	if (fullscreen_attr) {
 	    if (Tk_Attributes((Tk_Window) winPtr)->override_redirect) {
@@ -3247,6 +3439,33 @@ WmAttributesCmd(
     }
 
     return TCL_OK;
+}
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * AppearanceStringGet --
+ *
+ *	Transform the flag bits to appearance strings.
+ *
+ * Results:
+ *	Pointer to a static string.
+ *
+ * Side effects:
+ *	none.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static inline const char * AppearanceStringGet(int flags)
+{
+    if ((flags & WM_OVERRIDE_APPEARANCE) == 0) {
+	return AttributeAppearanceStrings[APPEARANCE_AUTO];
+    }
+    if (flags & WM_APPEARANCE_DARK) {
+	return AttributeAppearanceStrings[APPEARANCE_DARK];
+    }
+    return AttributeAppearanceStrings[APPEARANCE_LIGHT];
 }
 
 /*
@@ -5528,7 +5747,7 @@ WmTransientCmd(
 	}
 	return TCL_OK;
     }
-    if (Tcl_GetString(objv[3])[0] == '\0') {
+    if (TkObjIsEmpty(objv[3])) {
 	if (containerPtr != NULL) {
 	    /*
 	     * If we had a container, tell them that we aren't tied to them
@@ -6192,7 +6411,7 @@ UpdateGeometryInfo(
 	reqHeight = height + wmPtr->borderHeight;
 	reqWidth = width + wmPtr->borderWidth;
 
-	while (1) {
+	while (true) {
 	    MoveWindow(wmPtr->wrapper, x, y, reqWidth, reqHeight, TRUE);
 	    GetWindowRect(wmPtr->wrapper, &windowRect);
 	    newHeight = windowRect.bottom - windowRect.top;
@@ -7829,6 +8048,109 @@ TopLevelProc(
  *----------------------------------------------------------------------
  */
 
+/*
+ * Returns true if the registry value of AppsUseLightTheme is true,
+ * or if the key does not exist or if there is an error reading the value.
+ */
+
+bool AppsShouldUseLightTheme() {
+    HKEY hKey;
+    LONG lResult;
+    LPCWSTR subKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize";
+    LPCWSTR valueName = L"AppsUseLightTheme";
+
+    lResult = RegOpenKeyExW(
+	HKEY_CURRENT_USER,  // Root hive for the active user
+	subKey,	     // Subkey path
+	0,		  // Reserved, must be 0
+	KEY_READ,	   // Security access mask
+	&hKey	       // Out handle to the open key
+    );
+
+    if (lResult != ERROR_SUCCESS) {
+	return 1;
+    }
+
+    DWORD dwValue = 0;
+    DWORD dwSize = sizeof(DWORD);
+
+    lResult = RegQueryValueExW(
+	hKey,
+	valueName,
+	NULL,
+	NULL,
+	(LPBYTE)&dwValue,
+	&dwSize
+    );
+    RegCloseKey(hKey);
+    if (lResult == ERROR_SUCCESS) {
+      return dwValue;
+    } else {
+      return 1;
+    }
+}
+static void AppearanceIdleProc(
+    void *clientData)
+{
+    TkWindow *winPtr = (TkWindow *)clientData;
+    WmInfo *wmPtr = winPtr->wmInfoPtr;
+    if (wmPtr) {
+	wmPtr->flags &= ~WM_APPEARANCE_PENDING;
+    }
+    SynchronizeAppearance((TkWindow *)winPtr);
+}
+
+static int SynchronizeAppearance(
+    TkWindow *winPtr)
+{
+    Tk_Window tkwin = (Tk_Window)winPtr;
+    WmInfo *wmPtr = winPtr->wmInfoPtr;
+    if (wmPtr == NULL) {
+	return TCL_ERROR;
+    }
+    if (wmPtr->flags & WM_OVERRIDE_APPEARANCE) {
+	return TCL_OK;
+    }
+    bool appsShouldBeDark = !AppsShouldUseLightTheme();
+    long long isDarkParam; /* Alignment matters! */
+    bool windowIsDark;
+    TkpWindowIsDark(tkwin, &windowIsDark);
+    if (appsShouldBeDark == windowIsDark) {
+#if 0 /* for debugging */
+	 Tk_SendVirtualEvent(tkwin, "AppearanceChanged",
+	    Tcl_ObjPrintf("Already in sync"));
+#endif
+	return TCL_OK;
+    }
+    isDarkParam = appsShouldBeDark ? 1 : 0;
+    long status = DwmSetWindowAttribute(
+	wmPtr->wrapper,
+	DWMWA_USE_IMMERSIVE_DARK_MODE,
+	&isDarkParam,
+	sizeof(isDarkParam));
+    if (status != S_OK) {
+	Tk_SendVirtualEvent(tkwin, "AppearanceChanged",
+	    Tcl_ObjPrintf("SetWindowAttribute failed with %lx", status));
+	return TCL_ERROR;
+    }
+
+    /*
+     * On Windows 10 (unlike on 11) the title bar doesn't redraw
+     * automatically after changing the `DWMWA_USE_IMMERSIVE_DARK_MODE`
+     * attribute. To trigger a redraw, we'll have to toggle the nonclient
+     * area's focus state.
+     */
+    bool isWindowFocused = GetForegroundWindow() == wmPtr->wrapper;
+
+    SendMessageW(wmPtr->wrapper, WM_NCACTIVATE, !isWindowFocused, 0);
+    SendMessageW(wmPtr->wrapper, WM_NCACTIVATE, isWindowFocused, 0);
+
+    const char *newAppearance = appsShouldBeDark ? "dark" : "light";
+    Tk_SendVirtualEvent(tkwin, "AppearanceChanged",
+			Tcl_ObjPrintf("appearance %s ", newAppearance));
+    return TCL_OK;
+}
+
 static LRESULT CALLBACK
 WmProc(
     HWND hwnd,
@@ -7850,6 +8172,14 @@ WmProc(
     case WM_ERASEBKGND:
 	result = 0;
 	goto done;
+
+    case WM_UAHDRAWMENU:
+    case WM_UAHDRAWMENUITEM:
+    case WM_UAHMEASUREMENUITEM:
+	if (TkWinHandleMenubarDraw(hwnd, message, wParam, lParam, &result)) {
+	    goto done;
+	}
+	break;
 
     case WM_ENTERSIZEMOVE:
 	inMoveSize = 1;
@@ -7951,10 +8281,23 @@ WmProc(
 	goto done;
 
     case WM_SETTINGCHANGE:
+	winPtr = GetTopLevel(hwnd);
 	if (wParam == SPI_SETNONCLIENTMETRICS) {
-	    winPtr = GetTopLevel(hwnd);
 	    TkWinSetupSystemFonts(winPtr->mainPtr);
 	    result = 0;
+	    goto done;
+	}
+	if (lParam != 0 &&
+	    wcscmp((const wchar_t*)lParam, L"ImmersiveColorSet") == 0) {
+	    /* This message gets sent multiple times for each change of the
+	     * Settings because both AppsUseLightTheme and
+	     * SystemUsesLightTheme can change when the theme is changed by
+	     * the user in the Settings. (The "Custom" menu item allows
+	     * setting these separately but the Light and Dark menus change
+	     * both.)  Moreover, changing both results in nested calls to this
+	     * function.
+	     */
+	    return SynchronizeAppearance((void *)winPtr);
 	    goto done;
 	}
 	break;
@@ -8036,7 +8379,11 @@ WmProc(
 	 * All other toplevels are deemed non-minimizable when a grab is
 	 * present.
 	 * If there is a grab in effect and this window is outside the
-	 * grab tree then ignore all system commands. [Bug 1847002]
+	 * grab tree then ignore all system commands, except moving, sizing
+	 * and restoring. [Bug 1847002]
+	 * Restoring must be allowed, otherwise the window cannot be restored
+	 * after "show desktop" (Win+D), which minimizes it without
+	 * WM_SYSCOMMAND. [ed6c3a787d]
 	 */
 
 	if (winPtr) {
@@ -8048,8 +8395,16 @@ WmProc(
 		goto done;
 	    }
 	    if (grab == TK_GRAB_EXCLUDED
-		&& !(SC_MOVE == cmd || SC_SIZE == cmd)) {
+		&& !(SC_MOVE == cmd || SC_SIZE == cmd || SC_RESTORE == cmd)) {
 		goto done;
+	    }
+	    /*
+	     * The mouse capture set by a global grab stops the window
+	     * from being restored. [Bug 3138512]
+	     */
+
+	    if (SC_RESTORE == cmd && GetCapture() != NULL) {
+		ReleaseCapture();
 	    }
 	}
 	/* fall through */
@@ -8089,6 +8444,9 @@ WmProc(
 	}
     } else {
 	result = DefWindowProcW(hwnd, message, wParam, lParam);
+    }
+    if (message == WM_NCPAINT || message == WM_NCACTIVATE) {
+	TkWinDrawMenubarLine(hwnd);
     }
 
   done:
@@ -8469,10 +8827,12 @@ TkpWinToplevelDeiconify(
 
     /*
      * If we were in the ZoomState (maximized), 'wm deiconify' should not
-     * cause the window to shrink
+     * cause the window to shrink. A withdrawn window has lost its ZoomState,
+     * but a hidden wrapper keeps its maximized style.
      */
 
-    if (wmPtr->hints.initial_state == ZoomState) {
+    if (wmPtr->hints.initial_state == ZoomState
+	    || (wmPtr->wrapper && IsZoomed(wmPtr->wrapper))) {
 	TkpWmSetState(winPtr, ZoomState);
     } else {
 	TkpWmSetState(winPtr, NormalState);
@@ -8693,6 +9053,58 @@ RemapWindows(
     }
 }
 
+/*
+ *----------------------------------------------------------------------
+ *
+ * TkpWindowIsDark --
+ *
+ *      Stub funciton which tests if the given window is in "dark mode".
+ *      Assigns true if the window is in dark mode, false if not.
+ *
+ * Results:
+ *      Returns a standard Tcl result code.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+TkpWindowIsDark(Tk_Window tkwin, bool *isdark) {
+    HWND hwnd = Tk_GetHWND(Tk_WindowId(tkwin));
+    HRESULT result;
+    long long answer = 0; /* Windows cares about the alignment. */
+
+    result = DwmGetWindowAttribute(
+	GetAncestor(hwnd, GA_ROOT),
+	DWMWA_USE_IMMERSIVE_DARK_MODE,
+	&answer,
+	sizeof(answer));
+    if (result != S_OK) { /* Maybe we should have used the old value? */
+	result = DwmGetWindowAttribute(
+	    GetAncestor(hwnd, GA_ROOT),
+	    DWMWA_OLD_USE_IMMERSIVE_DARK_MODE,
+	    &answer,
+	    sizeof(answer));
+    }
+    *isdark = answer ? true : false;
+
+#if 0
+    /* Debug error results from DwmGetWindowAttribute. */
+    if (result != S_OK) {
+	char hexresult[32];
+	sprintf(hexresult, "%lx", result);
+	FILE *errorfile = fopen("error", "w");
+	fwrite(hexresult, strlen(hexresult), 1, errorfile);
+	fclose(errorfile);
+    }
+#endif
+    return (result == S_OK ? TCL_OK : TCL_ERROR);
+}
+
+
+
 /*
  * Local Variables:
  * mode: c

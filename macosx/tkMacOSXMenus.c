@@ -18,6 +18,16 @@
 static void		GenerateEditEvent(const char *name);
 static Tcl_Obj *	GetWidgetDemoPath(Tcl_Interp *interp);
 
+static void ShowAboutIdleTask(void *clientData) {
+    Tcl_Interp *interp = (Tcl_Interp *) clientData;
+    int code = Tcl_EvalEx(interp, "tkAboutDialog", TCL_INDEX_NONE,
+			  TCL_EVAL_GLOBAL);
+    if (code != TCL_OK) {
+	Tcl_BackgroundException(interp, code);
+    }
+    Tcl_ResetResult(interp);
+}
+
 
 #pragma mark TKApplication(TKMenus)
 
@@ -205,13 +215,7 @@ static Tcl_Obj *	GetWidgetDemoPath(Tcl_Interp *interp);
 	    NULL, 0) || (GetCurrentEventKeyModifiers() & optionKey)) {
 	[super orderFrontStandardAboutPanel:NSApp];
     } else {
-	int code = Tcl_EvalEx(_eventInterp, "tkAboutDialog", TCL_INDEX_NONE,
-		TCL_EVAL_GLOBAL);
-
-	if (code != TCL_OK) {
-	    Tcl_BackgroundException(_eventInterp, code);
-	}
-	Tcl_ResetResult(_eventInterp);
+	Tcl_DoWhenIdle(ShowAboutIdleTask, _eventInterp);
     }
 }
 
@@ -388,7 +392,7 @@ GenerateEditEvent(
     event.virt.event = Tk_WindowId(tkwin);
     event.virt.root = XRootWindow(Tk_Display(tkwin), 0);
     event.virt.subwindow = None;
-    event.virt.time = TkpGetMS();
+    event.virt.time = TkGetMS();
     XQueryPointer(NULL, winPtr->window, NULL, NULL,
 	    &event.virt.x_root, &event.virt.y_root, &x, &y, &event.virt.state);
     Tk_TopCoordsToWindow(tkwin, x, y, &event.virt.x, &event.virt.y);

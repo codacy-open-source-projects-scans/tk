@@ -971,7 +971,7 @@ test text-3.2 {TextWidgetCmd procedure} -setup {
     .t gorp 1.0 z 1.2
 } -cleanup {
     destroy .t
-} -returnCodes error -result {bad option "gorp": must be bbox, cget, compare, configure, count, debug, delete, dlineinfo, dump, edit, get, image, index, insert, mark, peer, pendingsync, replace, scan, search, see, sync, tag, window, xview, or yview}
+} -returnCodes error -result {bad option "gorp": must be bbox, cget, compare, configure, count, debug, delete, dlineinfo, dump, edit, get, image, index, insert, locale, mark, peer, pendingsync, replace, scan, search, see, sync, tag, window, xview, or yview}
 
 test text-4.1 {TextWidgetCmd procedure, "bbox" option} -setup {
     text .t
@@ -1193,8 +1193,7 @@ Line 7"
     .t co 1.0 z 1.2
 } -cleanup {
     destroy .t
-} -returnCodes error -result {ambiguous option "co": must be bbox, cget, compare, configure, count, debug, delete, dlineinfo, dump, edit, get, image, index, insert, mark, peer, pendingsync, replace, scan, search, see, sync, tag, window, xview, or yview}
-
+} -returnCodes error -result {ambiguous option "co": must be bbox, cget, compare, configure, count, debug, delete, dlineinfo, dump, edit, get, image, index, insert, locale, mark, peer, pendingsync, replace, scan, search, see, sync, tag, window, xview, or yview}
 # "configure" option is already covered above
 
 test text-7.1 {TextWidgetCmd procedure, "debug" option} -setup {
@@ -1210,7 +1209,7 @@ test text-7.2 {TextWidgetCmd procedure, "debug" option} -setup {
     .t de 0 1
 } -cleanup {
     destroy .t
-} -returnCodes error -result {ambiguous option "de": must be bbox, cget, compare, configure, count, debug, delete, dlineinfo, dump, edit, get, image, index, insert, mark, peer, pendingsync, replace, scan, search, see, sync, tag, window, xview, or yview}
+} -returnCodes error -result {ambiguous option "de": must be bbox, cget, compare, configure, count, debug, delete, dlineinfo, dump, edit, get, image, index, insert, locale, mark, peer, pendingsync, replace, scan, search, see, sync, tag, window, xview, or yview}
 test text-7.3 {TextWidgetCmd procedure, "debug" option} -setup {
     text .t
 } -body {
@@ -3182,7 +3181,7 @@ test text-12.3 {TextWidgetCmd procedure, "index" option} -setup {
     .t in a b
 } -cleanup {
     destroy .t
-} -returnCodes error -result {ambiguous option "in": must be bbox, cget, compare, configure, count, debug, delete, dlineinfo, dump, edit, get, image, index, insert, mark, peer, pendingsync, replace, scan, search, see, sync, tag, window, xview, or yview}
+} -returnCodes error -result {ambiguous option "in": must be bbox, cget, compare, configure, count, debug, delete, dlineinfo, dump, edit, get, image, index, insert, locale, mark, peer, pendingsync, replace, scan, search, see, sync, tag, window, xview, or yview}
 test text-12.4 {TextWidgetCmd procedure, "index" option} -setup {
     text .t
 } -body {
@@ -7843,6 +7842,44 @@ test text-38.1 {Extending selection with mouse going outside the widget - Bug a9
 } -cleanup {
     destroy .t
 } -result {1.0}
+test text-38.2 {Click to the right of the end of a line - Bug 13aabdb3c1} -setup {
+    pack [text .t -width 40 -height 10]
+    .t insert end "short\nsecond line\n"
+    update
+} -body {
+    set x [expr {[winfo width .t] - 10}]
+    set y [expr {[lindex [.t bbox 1.0] 1] + 5}]
+    event generate .t <Button-1> -x $x -y $y
+    event generate .t <ButtonRelease-1> -x $x -y $y
+    set res [.t index insert]
+    event generate .t <Button-1> -x 2 -y $y
+    event generate .t <B1-Motion> -x $x -y $y
+    event generate .t <ButtonRelease-1> -x $x -y $y
+    lappend res {*}[.t tag ranges sel]
+} -cleanup {
+    destroy .t
+} -result {1.5 1.0 1.5}
+
+
+test text-39.1 {no scroll command before the text is mapped - bug 991849} -setup {
+    toplevel .top
+    wm withdraw .top
+    set log {}
+} -body {
+    text .top.t -width 20 -height 10 -wrap none \
+	    -xscrollcommand {lappend log x} -yscrollcommand {lappend log y}
+    .top.t insert end [string repeat [string repeat x 40]\n 19]
+    pack .top.t
+    update
+    set res [list $log]
+    wm deiconify .top
+    tkwait visibility .top.t
+    update
+    lappend res $log
+} -cleanup {
+    destroy .top
+    unset -nocomplain log res
+} -result {{} {y 0.0 0.5 x 0.0 0.5}}
 
 #
 # TESTFILE CLEANUP

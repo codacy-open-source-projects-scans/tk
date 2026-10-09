@@ -26,7 +26,7 @@ m4_ifdef([SC_USE_CONFIG_HEADERS], [
 TK_VERSION=9.1
 TK_MAJOR_VERSION=9
 TK_MINOR_VERSION=1
-TK_PATCH_LEVEL="a2"
+TK_PATCH_LEVEL=".1"
 VERSION=${TK_VERSION}
 LOCALES="cs da de el en en_gb eo es fr hu it nl pl pt ru sv"
 
@@ -41,6 +41,18 @@ if test "${TCL_MAJOR_VERSION}" -lt 9 ; then
     AC_MSG_ERROR([${PACKAGE_NAME} ${PACKAGE_VERSION} requires Tcl 9.0+
 Found config for Tcl ${TCL_VERSION}])
 fi
+
+#------------------------------------------------------------------------
+# Compile against the Tcl source tree if it is accessible, otherwise use
+# the installed Tcl headers.
+#------------------------------------------------------------------------
+
+if test -r "${TCL_SRC_DIR}/generic/tcl.h"; then
+    TCL_INCLUDES='-I${TCL_GENERIC_DIR} -I${TCL_PLATFORM_DIR}'
+else
+    TCL_INCLUDES="${TCL_INCLUDE_SPEC}"
+fi
+AC_SUBST(TCL_INCLUDES)
 
 SC_PROG_TCLSH
 SC_BUILD_TCLSH
@@ -76,6 +88,7 @@ if test "${CFLAGS+set}" != "set" ; then
 fi
 
 AC_PROG_CC
+AC_PROG_CPP
 AC_C_INLINE
 
 #------------------------------------------------------------------------
@@ -170,7 +183,7 @@ if test $tk_ok = no; then
 fi
 
 #------------------------------------------------------------------------------
-#       Find out all about time handling differences.
+#	Find out all about time handling differences.
 #------------------------------------------------------------------------------
 
 AC_CHECK_HEADERS_ONCE([sys/time.h])
@@ -345,20 +358,41 @@ fi
 if test $tk_aqua = no; then
 
     #--------------------------------------------------------------------
-    # --enable-xft (default: yes)
+    # --enable-xft (default: yes) — independent switch
     #--------------------------------------------------------------------
     AC_MSG_CHECKING([whether to use xft])
     AC_ARG_ENABLE(xft,
 	AS_HELP_STRING([--enable-xft],
 	    [use freetype/fontconfig/xft for antialiased fonts (default: yes)]),
 	[enable_xft=$enableval], [enable_xft="yes"])
+    AC_MSG_RESULT([$enable_xft])
 
     XFT_CFLAGS=""
     XFT_LIBS=""
+    XFT_DEPS=""
 
-    if test "$enable_xft" = "no" ; then
-	AC_MSG_RESULT([no])
-    else
+    #--------------------------------------------------------------------
+    # --enable-bidi (default: yes on X11 if Xft and HarfBuzz >= 2.8.2 are
+    # found), requires Xft
+    #--------------------------------------------------------------------
+    AC_MSG_CHECKING([whether to enable bidirectional (Bidi) text support])
+    AC_ARG_ENABLE(bidi,
+	AS_HELP_STRING([--enable-bidi],
+	    [enable bidirectional/RTL text support using SheenBidi + HarfBuzz (default: yes if Xft and HarfBuzz >= 2.8.2 are found)]),
+	[enable_bidi=$enableval; tk_bidi_explicit=yes],
+	[enable_bidi="yes"; tk_bidi_explicit=no])
+    AC_MSG_RESULT([$enable_bidi])
+
+    if test "$enable_bidi" = "yes" && test "$enable_xft" = "no"; then
+	if test "$tk_bidi_explicit" = "yes"; then
+	    AC_MSG_ERROR([--enable-bidi requires Xft, it cannot be combined with --disable-xft.])
+	fi
+	AC_MSG_NOTICE([Xft is disabled: disabling bidirectional text support too.])
+	enable_bidi=no
+    fi
+
+    # Now actually enable Xft if requested
+    if test "$enable_xft" = "yes" ; then
 	found_xft="yes"
 
 	XFT_CFLAGS=`xft-config --cflags 2>/dev/null` || found_xft="no"
@@ -368,8 +402,6 @@ if test $tk_aqua = no; then
 	    XFT_CFLAGS=`pkg-config --cflags xft fontconfig 2>/dev/null` || found_xft="no"
 	    XFT_LIBS=`pkg-config --libs xft fontconfig 2>/dev/null` || found_xft="no"
 	fi
-
-	AC_MSG_RESULT([$found_xft])
 
 	if test "$found_xft" = "yes" ; then
 	    tk_oldCFlags=$CFLAGS
@@ -385,8 +417,10 @@ if test $tk_aqua = no; then
 
 	    if test "$found_xft" = "yes" ; then
 		LIBS="$tk_oldLibs $XFT_LIBS $XLIBSW -lfontconfig"
+		XFT_DEPS="xft"
 		AC_CHECK_LIB(fontconfig, FcFontSort, [
 		    XFT_LIBS="$XFT_LIBS -lfontconfig"
+		    XFT_DEPS="$XFT_DEPS fontconfig"
 		], [])
 	    fi
 
@@ -401,86 +435,125 @@ if test $tk_aqua = no; then
 	    enable_xft=no
 	    XFT_CFLAGS=""
 	    XFT_LIBS=""
+	    XFT_DEPS=""
 	else
 	    enable_xft=yes
 	fi
     fi
 
-    AC_SUBST(XFT_CFLAGS)
-    AC_SUBST(XFT_LIBS)
-
-    #--------------------------------------------------------------------
-    # --enable-bidi  (HarfBuzz is required only when enabled)
-    #--------------------------------------------------------------------
-    AC_MSG_CHECKING([whether to enable bidirectional (Bidi) text support])
-    AC_ARG_ENABLE(bidi,
-	AS_HELP_STRING([--enable-bidi],
-	    [enable bidirectional/RTL text support using SheenBidi + HarfBuzz (forces --enable-xft=yes)]),
-	[enable_bidi=$enableval], [enable_bidi="no"])
+    if test "$enable_bidi" = "yes" && test "$enable_xft" = "no"; then
+	if test "$tk_bidi_explicit" = "yes"; then
+	    AC_MSG_ERROR([--enable-bidi requires Xft, but Xft is not found or unusable.
+Install the Xft development package (e.g. libxft-dev, libXft-devel or
+libxft) or configure with --disable-bidi.])
+	fi
+	AC_MSG_WARN([Disabling bidirectional text support (--disable-bidi).])
+	enable_bidi=no
+    fi
 
     if test "$enable_bidi" = "yes"; then
-	AC_MSG_RESULT([yes (forces Xft on)])
-	if test "$enable_xft" = "no"; then
-	   AC_MSG_NOTICE([--enable-bidi requested: enabling Xft as well])
-	   enable_xft=yes
+	#--------------------------------------------------------------------
+	# HarfBuzz - version check (minimum 2.8.2)
+	#--------------------------------------------------------------------
+	hb_problem=""
+	AC_MSG_CHECKING([for HarfBuzz (required for Bidi)])
+	if pkg-config --exists harfbuzz; then
+	    HB_VERSION=`pkg-config --modversion harfbuzz 2>/dev/null || echo "0.0.0"`
+	    AC_MSG_RESULT([found version $HB_VERSION])
+
+	    # Pure shell version comparison: is HB_VERSION < 2.8.2 ?
+	    HB_MAJOR=`echo $HB_VERSION | cut -d. -f1`
+	    HB_MINOR=`echo $HB_VERSION | cut -d. -f2`
+	    HB_PATCH=`echo $HB_VERSION | cut -d. -f3 | cut -d- -f1`
+
+	    REQ_MAJOR=2
+	    REQ_MINOR=8
+	    REQ_PATCH=2
+
+	    too_old=no
+	    if test $HB_MAJOR -lt $REQ_MAJOR; then
+		too_old=yes
+	    elif test $HB_MAJOR -eq $REQ_MAJOR; then
+		if test $HB_MINOR -lt $REQ_MINOR; then
+		    too_old=yes
+		elif test $HB_MINOR -eq $REQ_MINOR; then
+		    if test -n "$HB_PATCH" && test $HB_PATCH -lt $REQ_PATCH; then
+			too_old=yes
+		    fi
+		fi
+	    fi
+	    if test "$too_old" = "yes"; then
+		hb_problem="HarfBuzz version $HB_VERSION is too old (need >= 2.8.2)"
+	    fi
+	else
+	    AC_MSG_RESULT([no])
+	    hb_problem="HarfBuzz development files not found"
 	fi
 
+	if test -z "$hb_problem"; then
+	    HB_CFLAGS=`pkg-config --cflags harfbuzz`
+	    HB_LIBS=`pkg-config --libs harfbuzz`
+
+	    tk_oldCFlags=$CFLAGS
+	    tk_oldLibs=$LIBS
+	    CFLAGS="$CFLAGS $XINCLUDES $XFT_CFLAGS $HB_CFLAGS"
+	    LIBS="$tk_oldLibs $XFT_LIBS $HB_LIBS $XLIBSW"
+
+	    AC_CHECK_HEADER(harfbuzz/hb.h, [], [
+		hb_problem="HarfBuzz header <harfbuzz/hb.h> not found"
+	    ], [#include <X11/Xlib.h>])
+	    if test -z "$hb_problem"; then
+		AC_CHECK_LIB(harfbuzz, hb_buffer_create, [], [
+		    hb_problem="HarfBuzz library (libharfbuzz) not found or unusable"
+		])
+	    fi
+
+	    CFLAGS=$tk_oldCFlags
+	    LIBS=$tk_oldLibs
+	fi
+
+	if test -n "$hb_problem"; then
+	    if test "$tk_bidi_explicit" = "yes"; then
+		AC_MSG_ERROR([--enable-bidi requires HarfBuzz >= 2.8.2: $hb_problem.
+Install the HarfBuzz development package (e.g. libharfbuzz-dev,
+harfbuzz-devel or harfbuzz) or configure with --disable-bidi.])
+	    fi
+	    AC_MSG_WARN([$hb_problem.])
+	    AC_MSG_WARN([Disabling bidirectional text support (--disable-bidi).])
+	    enable_bidi=no
+	    HB_CFLAGS=""
+	    HB_LIBS=""
+	fi
+    fi
+
+    if test "$enable_bidi" = "yes"; then
 	BIDI_CFLAGS="-I${TK_SRC_DIR}/unix/bidi/Headers \
-                     -I${TK_SRC_DIR}/unix/bidi/Source \
-                     -I${TK_SRC_DIR}/unix/bidi \
-                     -DSB_CONFIG_UNITY -DSB_CONFIG_EXPERIMENTAL_TEXT_API -w"
+		     -I${TK_SRC_DIR}/unix/bidi/Source \
+		     -I${TK_SRC_DIR}/unix/bidi \
+		     -DSB_CONFIG_UNITY -DSB_CONFIG_EXPERIMENTAL_TEXT_API -w \
+		     $HB_CFLAGS"
 	AC_DEFINE(HAVE_BIDI, 1, [Define to 1 if bidirectional text support is enabled])
 	UNIX_FONT_OBJS="tkUnixBidiFont.o SheenBidi.o"
+	AC_SUBST(HB_CFLAGS)
+	AC_SUBST(HB_LIBS)
+    fi
 
-        #--------------------------------------------------------------------
-        # HarfBuzz - HARD DEPENDENCY only when --enable-bidi=yes
-        #--------------------------------------------------------------------
-        AC_MSG_CHECKING([for HarfBuzz (required for --enable-bidi)])
-        if pkg-config --exists harfbuzz; then
-            HB_CFLAGS=`pkg-config --cflags harfbuzz`
-            HB_LIBS=`pkg-config --libs harfbuzz`
-            AC_MSG_RESULT([yes])
-
-            tk_oldCFlags=$CFLAGS
-            tk_oldLibs=$LIBS
-            CFLAGS="$CFLAGS $XINCLUDES $XFT_CFLAGS $HB_CFLAGS"
-            LIBS="$tk_oldLibs $XFT_LIBS $HB_LIBS $XLIBSW"
-
-            AC_CHECK_HEADER(harfbuzz/hb.h, [], [
-                AC_MSG_ERROR([HarfBuzz header <harfbuzz/hb.h> not found])
-            ], [#include <X11/Xlib.h>])
-
-            AC_CHECK_LIB(harfbuzz, hb_buffer_create, [], [
-                AC_MSG_ERROR([HarfBuzz library (libharfbuzz) not found or unusable])
-            ])
-
-            CFLAGS=$tk_oldCFlags
-            LIBS=$tk_oldLibs
-
-            BIDI_CFLAGS="$BIDI_CFLAGS $HB_CFLAGS"
-            AC_SUBST(HB_CFLAGS)
-            AC_SUBST(HB_LIBS)
-        else
-            AC_MSG_ERROR([--enable-bidi requires HarfBuzz development files.
-Please install the HarfBuzz development package:
-  - Debian/Ubuntu:   sudo apt install libharfbuzz-dev
-  - Fedora/RHEL:     sudo dnf install harfbuzz-devel
-  - Arch:            sudo pacman -S harfbuzz
-  - macOS (Homebrew): brew install harfbuzz])
-        fi
-
-    else
-	AC_MSG_RESULT([no])
+    if test "$enable_bidi" = "no"; then
+	# Bidi disabled
 	BIDI_CFLAGS=""
 	HB_CFLAGS=""
 	HB_LIBS=""
 	if test "$enable_xft" = "yes" ; then
-	   UNIX_FONT_OBJS="tkUnixRFont.o"
-	   AC_DEFINE(HAVE_XFT, 1, [Have we turned on XFT (antialiased fonts)?])
+	    UNIX_FONT_OBJS="tkUnixRFont.o"
+	    AC_DEFINE(HAVE_XFT, 1, [Have we turned on XFT (antialiased fonts)?])
 	else
-	   UNIX_FONT_OBJS="tkUnixFont.o"
+	    UNIX_FONT_OBJS="tkUnixFont.o"
 	fi
     fi
+
+    AC_SUBST(XFT_CFLAGS)
+    AC_SUBST(XFT_LIBS)
+    AC_SUBST(XFT_DEPS)
 
     AC_SUBST(BIDI_CFLAGS)
     AC_SUBST(UNIX_FONT_OBJS)
@@ -510,6 +583,58 @@ else
 fi
 
 #--------------------------------------------------------------------
+#	Check for the X RENDER extension client library (Xrender), used
+#	to composite RGBA photo images server-side (TkpPutRGBAImage).
+#--------------------------------------------------------------------
+
+XRENDER_CFLAGS=""
+XRENDER_LIBS=""
+if test $tk_aqua = no; then
+    AC_MSG_CHECKING([whether to use xrender])
+    AC_ARG_ENABLE(xrender,
+	AS_HELP_STRING([--enable-xrender],
+	    [use Xrender to composite photo images with alpha (default: yes)]),
+	[enable_xrender=$enableval], [enable_xrender="yes"])
+    AC_MSG_RESULT([$enable_xrender])
+
+    if test "$enable_xrender" = "yes" ; then
+	found_xrender="yes"
+	XRENDER_CFLAGS=`pkg-config --cflags xrender 2>/dev/null` || found_xrender="no"
+	XRENDER_LIBS=`pkg-config --libs xrender 2>/dev/null` || found_xrender="no"
+	if test "$found_xrender" = "no" ; then
+	    found_xrender="yes"
+	    XRENDER_CFLAGS=""
+	    XRENDER_LIBS="-lXrender"
+	fi
+
+	tk_oldCFlags=$CFLAGS
+	CFLAGS="$CFLAGS $XINCLUDES $XRENDER_CFLAGS"
+	tk_oldLibs=$LIBS
+	LIBS="$tk_oldLibs $XRENDER_LIBS $XLIBSW"
+
+	AC_CHECK_HEADER(X11/extensions/Xrender.h, [], [found_xrender=no],
+	    [#include <X11/Xlib.h>])
+	if test "$found_xrender" = "yes" ; then
+	    AC_CHECK_LIB(Xrender, XRenderQueryExtension, [], [found_xrender=no])
+	fi
+
+	CFLAGS=$tk_oldCFlags
+	LIBS=$tk_oldLibs
+
+	if test "$found_xrender" = "yes" ; then
+	    AC_DEFINE(HAVE_XRENDER, 1, [Have we turned on XRender (photo image compositing)?])
+	else
+	    AC_MSG_WARN([Can't find xrender configuration -- photo images will composite in software])
+	    enable_xrender=no
+	    XRENDER_CFLAGS=""
+	    XRENDER_LIBS=""
+	fi
+    fi
+fi
+AC_SUBST(XRENDER_CFLAGS)
+AC_SUBST(XRENDER_LIBS)
+
+#--------------------------------------------------------------------
 #	Check for libcups support
 #--------------------------------------------------------------------
 
@@ -529,7 +654,7 @@ if test $tk_aqua = no; then
 	    found_cups=no
 	else
 	    found_cups=yes
-	    CUPS_CFLAGS="-DHAVE_CUPS"
+	    CUPS_CFLAGS="-DHAVE_CUPS `cups-config --cflags`"
 	    CUPS_LIBS=`cups-config --libs`
 	fi
 	AC_MSG_RESULT([$found_cups])
@@ -701,7 +826,7 @@ if test "$FRAMEWORK_BUILD" = "1" ; then
     TK_LIB_SPEC="-F${libdir} -framework Tk"
     libdir="${libdir}/Tk.framework/Versions/\${VERSION}"
     TK_LIBRARY="${libdir}/Resources/Scripts"
-    TK_PKG_DIR="${libdir}/Resources/Scripts"
+    TK_PKG_DIR="Resources/Scripts"
     TK_RSRC_FILE="Tk.rsrc"
     WISH_RSRC_FILE="Wish.rsrc"
     includedir="${libdir}/Headers"
@@ -766,14 +891,14 @@ fi
 AC_MSG_CHECKING([for building with zipfs])
 if test "${ZIPFS_BUILD}" = 1; then
     if test "${SHARED_BUILD}" = 0; then
-       ZIPFS_BUILD=2;
-       AC_DEFINE(ZIPFS_BUILD, 2, [Are we building with zipfs enabled?])
-       INSTALL_LIBRARIES=install-demos
-       AC_MSG_RESULT([yes])
+	ZIPFS_BUILD=2;
+	AC_DEFINE(ZIPFS_BUILD, 2, [Are we building with zipfs enabled?])
+	INSTALL_LIBRARIES=install-demos
+	AC_MSG_RESULT([yes])
      else
-       AC_DEFINE(ZIPFS_BUILD, 1, [Are we building with zipfs enabled?])
-       INSTALL_LIBRARIES=install-demos
-       AC_MSG_RESULT([yes])
+	AC_DEFINE(ZIPFS_BUILD, 1, [Are we building with zipfs enabled?])
+	INSTALL_LIBRARIES=install-demos
+	AC_MSG_RESULT([yes])
     fi
 else
 AC_MSG_RESULT([no])
@@ -786,8 +911,8 @@ AC_SUBST(INSTALL_LIBRARIES)
 AC_SUBST(INSTALL_MSGS)
 
 #--------------------------------------------------------------------
-#       The statements below define various symbols relating to Tk
-#       stub support.
+#	The statements below define various symbols relating to Tk
+#	stub support.
 #--------------------------------------------------------------------
 
 TK_STUB_LIB_FILE="libtkstub.a"

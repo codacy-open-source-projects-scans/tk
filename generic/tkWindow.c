@@ -193,8 +193,7 @@ static const TkCmd commands[] = {
     /*
      * Misc.
      */
-
-#ifdef MAC_OSX_TK
+#if 0 //#ifdef MAC_OSX_TK
     {"::tk::unsupported::MacWindowStyle",
 			TkUnsupported1ObjCmd,	PASSMAINWINDOW|ISSAFE},
 #endif
@@ -226,7 +225,7 @@ static void		UnlinkWindow(TkWindow *winPtr);
  * job is handled by the X server.
  */
 
-static int displayBeingClosed = 0;
+static bool displayBeingClosed = false;
 
 
 /*
@@ -252,7 +251,7 @@ static void
 TkCloseDisplay(
     TkDisplay *dispPtr)
 {
-    displayBeingClosed = 1;
+    displayBeingClosed = true;
     TkClipCleanup(dispPtr);
 
     if (dispPtr->name != NULL) {
@@ -286,6 +285,7 @@ TkCloseDisplay(
      */
 
     Tcl_DeleteHashTable(&dispPtr->winTable);
+    Tcl_DeleteHashTable(&dispPtr->deletedWinTable);
 
     Tcl_Free(dispPtr);
 
@@ -500,6 +500,7 @@ GetScreen(
 	    dispPtr->flags |= TK_DISPLAY_COLLAPSE_MOTION_EVENTS;
 
 	    Tcl_InitHashTable(&dispPtr->winTable, TCL_ONE_WORD_KEYS);
+	    Tcl_InitHashTable(&dispPtr->deletedWinTable, TCL_ONE_WORD_KEYS);
 
 	    dispPtr->name = (char *)Tcl_Alloc(length + 1);
 	    strncpy(dispPtr->name, screenName, length);
@@ -1029,7 +1030,7 @@ TkCreateMainWindow(
 #ifndef TCL_CFG_OPTIMIZED
 		".no-optimize"
 #endif
-#if !defined(_WIN32) && !defined(MAC_OSX_TK) && !defined(TK_USE_WAYLAND) && !defined(HAVE_XFT)
+#if !defined(_WIN32) && !defined(MAC_OSX_TK) && !defined(TK_USE_WAYLAND) && !defined(HAVE_XFT) && !defined(HAVE_BIDI)
 		".no-xft"
 #endif
 #if !defined(_WIN32) && !defined(MAC_OSX_TK) && !defined(TK_USE_WAYLAND) && !defined(HAVE_XSS)
@@ -1599,6 +1600,7 @@ Tk_DestroyWindow(
 #endif
 	Tcl_DeleteHashEntry(Tcl_FindHashEntry(&dispPtr->winTable,
 		winPtr->window));
+	TkRecordDeletedWindow(dispPtr, winPtr->window);
 	winPtr->window = None;
     }
     UnlinkWindow(winPtr);

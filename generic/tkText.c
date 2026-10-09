@@ -97,7 +97,6 @@ static const Tk_ObjCustomOption lineOption = {
     NULL,			/* freeProc */
     0
 };
-
 /*
  * Information used to parse text configuration options:
  */
@@ -176,6 +175,8 @@ static const Tk_OptionSpec optionSpecs[] = {
     {TK_OPTION_PIXELS, "-insertwidth", "insertWidth", "InsertWidth",
 	DEF_TEXT_INSERT_WIDTH, offsetof(TkText, insertWidthObj), TCL_INDEX_NONE,
 	0, 0, 0},
+    {TK_OPTION_CUSTOM, "-locale", "locale", "Locale",
+	"C", TCL_INDEX_NONE, offsetof(TkText, locale), 0, &TkLocaleOption, 0},
     {TK_OPTION_INT, "-maxundo", "maxUndo", "MaxUndo",
 	DEF_TEXT_MAX_UNDO, TCL_INDEX_NONE, offsetof(TkText, maxUndo),
 	TK_OPTION_DONT_SET_DEFAULT, 0, 0},
@@ -321,7 +322,7 @@ static int		SearchPerform(Tcl_Interp *interp,
  * executed.
  */
 
-int tkTextDebug = 0;
+bool tkTextDebug = false;
 
 /*
  * Forward declarations for functions defined later in this file:
@@ -484,6 +485,7 @@ CreateWidget(
     Tk_OptionTable optionTable;
     TkTextIndex startIndex;
     Tk_Window newWin;
+
 
     /*
      * Create the window.
@@ -678,17 +680,20 @@ TextWidgetObjCmd(
     int result = TCL_OK;
     int idx;
 
+    /* Make sure the grapheme dictionary is initialized. */
+    mojibake_dict_init();
+
     static const char *const optionStrings[] = {
 	"bbox", "cget", "compare", "configure", "count", "debug", "delete",
 	"dlineinfo", "dump", "edit", "get", "image", "index", "insert",
-	"mark", "peer", "pendingsync", "replace", "scan", "search",
+	"locale", "mark", "peer", "pendingsync", "replace", "scan", "search",
 	"see", "sync", "tag", "window", "xview", "yview", NULL
     };
     enum options {
 	TEXT_BBOX, TEXT_CGET, TEXT_COMPARE, TEXT_CONFIGURE, TEXT_COUNT,
 	TEXT_DEBUG, TEXT_DELETE, TEXT_DLINEINFO, TEXT_DUMP, TEXT_EDIT,
-	TEXT_GET, TEXT_IMAGE, TEXT_INDEX, TEXT_INSERT, TEXT_MARK,
-	TEXT_PEER, TEXT_PENDINGSYNC, TEXT_REPLACE, TEXT_SCAN,
+	TEXT_GET, TEXT_IMAGE, TEXT_INDEX, TEXT_INSERT, TEXT_LOCALE,
+	TEXT_MARK, TEXT_PEER, TEXT_PENDINGSYNC, TEXT_REPLACE, TEXT_SCAN,
 	TEXT_SEARCH, TEXT_SEE, TEXT_SYNC, TEXT_TAG, TEXT_WINDOW,
 	TEXT_XVIEW, TEXT_YVIEW
     };
@@ -817,7 +822,8 @@ TextWidgetObjCmd(
     case TEXT_COUNT: {
 	const TkTextIndex *indexFromPtr, *indexToPtr;
 	Tcl_Size i;
-	int found = 0, update = 0;
+	int found = 0;
+	bool update = false;
 	Tcl_Obj *objPtr = NULL;
 
 	if (objc < 4) {
@@ -932,7 +938,7 @@ TextWidgetObjCmd(
 		}
 		index.linePtr = indexFromPtr->linePtr;
 		index.byteIndex = 0;
-		while (1) {
+		while (true) {
 		    TkTextFindDisplayLineEnd(textPtr, &index, 1, NULL);
 		    if (TkTextIndexCmp(&index,indexFromPtr) >= 0) {
 			break;
@@ -944,7 +950,7 @@ TextWidgetObjCmd(
 		if (indexToPtr->linePtr != lastPtr) {
 		    index.linePtr = indexToPtr->linePtr;
 		    index.byteIndex = 0;
-		    while (1) {
+		    while (true) {
 			TkTextFindDisplayLineEnd(textPtr, &index, 1, NULL);
 			if (TkTextIndexCmp(&index,indexToPtr) >= 0) {
 			    break;
@@ -967,7 +973,7 @@ TextWidgetObjCmd(
 			- TkBTreeLinesTo(textPtr, indexFromPtr->linePtr);
 	    } else if (c == 'u'
 		    && !strncmp("-update", option, (size_t)length)) {
-		update = 1;
+		update = true;
 		continue;
 	    } else if (c == 'x'
 		    && !strncmp("-xpixels", option, (size_t)length)) {
@@ -1211,8 +1217,7 @@ TextWidgetObjCmd(
 	    result = TCL_ERROR;
 	    goto done;
 	}
-	if (TkTextDLineInfo(textPtr, indexPtr, &x, &y, &width, &height,
-		&base) == 0) {
+	if (TkTextDLineInfo(textPtr, indexPtr, &x, &y, &width, &height, &base)) {
 	    Tcl_Obj *listObj = Tcl_NewListObj(0, NULL);
 
 	    Tcl_ListObjAppendElement(interp, listObj, Tcl_NewWideIntObj(x));
@@ -1363,6 +1368,26 @@ TextWidgetObjCmd(
 	if (textPtr->state != TK_TEXT_STATE_DISABLED) {
 	    result = TextInsertCmd(NULL, textPtr, interp, objc-3, objv+3,
 		    indexPtr, 1);
+	}
+	break;
+    }
+    case TEXT_LOCALE: {
+	Tcl_Obj *localeObj;
+	const TkTextIndex *indexPtr;
+
+	if (objc != 3) {
+	    Tcl_WrongNumArgs(interp, 2, objv, "index");
+	    result = TCL_ERROR;
+	    goto done;
+	}
+	indexPtr = TkTextGetIndexFromObj(interp, textPtr, objv[2]);
+	if (indexPtr == NULL) {
+	    result = TCL_ERROR;
+	    goto done;
+	}
+	localeObj = TkTextIndexLocale(textPtr, indexPtr);
+	if (localeObj) {
+	    Tcl_SetObjResult(interp, localeObj);
 	}
 	break;
     }
@@ -3441,7 +3466,7 @@ TextFetchSelection(
      */
 
     count = 0;
-    while (1) {
+    while (true) {
 	/*
 	 * Find the end of the current range of selected text.
 	 */
@@ -3456,7 +3481,7 @@ TextFetchSelection(
 	 * this range of text.
 	 */
 
-	while (1) {
+	while (true) {
 	    if (maxBytes == 0) {
 		goto fetchDone;
 	    }
@@ -4147,7 +4172,7 @@ TextSearchAddNextLine(
     thisLinePtr = linePtr;
 
     while (thisLinePtr != NULL) {
-	int elideWraps = 0;
+	bool elideWraps = false;
 
 	curIndex.linePtr = thisLinePtr;
 	curIndex.byteIndex = 0;
@@ -4165,7 +4190,7 @@ TextSearchAddNextLine(
 		 */
 
 		if (segPtr->nextPtr == NULL && !nothingYet) {
-		    elideWraps = 1;
+		    elideWraps = true;
 		}
 		continue;
 	    }
@@ -4318,7 +4343,7 @@ TextSearchFoundMatch(
      */
 
     leftToScan = matchOffset;
-    while (1) {
+    while (true) {
 	curIndex.linePtr = linePtr;
 	curIndex.byteIndex = 0;
 
@@ -5404,7 +5429,7 @@ TextGetText(
 	    indexPtr1->byteIndex, &tmpIndex);
 
     if (TkTextIndexCmp(indexPtr1, indexPtr2) < 0) {
-	while (1) {
+	while (true) {
 	    Tcl_Size offset;
 	    TkTextSegment *segPtr = TkTextIndexToSeg(&tmpIndex, &offset);
 	    Tcl_Size last = segPtr->size, last2;
@@ -6022,7 +6047,7 @@ SearchCore(
 			 * searches.
 			 */
 
-			while (1) {
+			while (true) {
 			    lastFullLine = lastTotal;
 
 			    if (lineNum+extraLines>=searchSpecPtr->numLines) {
@@ -6228,7 +6253,7 @@ SearchCore(
 		     * searches.
 		     */
 
-		    while (1) {
+		    while (true) {
 			prevFullLine = lastTotal;
 
 			/*

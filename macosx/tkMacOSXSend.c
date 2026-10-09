@@ -49,7 +49,7 @@ typedef struct RegisteredInterp {
  * be reassigned to the path in the user's Library/Caches directory.
  */
 
-static char *appNameRegistryPath = "/tmp/TkAppnames";
+static char *appNameRegistryPath = (char *)"/tmp/TkAppnames";
 
 /*
  * Information that we record about an application.
@@ -538,7 +538,7 @@ RegOpen(
 
     Tcl_Size dictSize;
     Tcl_DictObjSize(NULL, regPtr->appNameDict, &dictSize);
-    Tcl_Obj **deadinterps = (Tcl_Obj**) Tcl_Alloc(dictSize * sizeof(Tcl_Obj*));
+    Tcl_Obj **deadinterps = (Tcl_Obj**)Tcl_Alloc(dictSize * sizeof(Tcl_Obj*));
     int count = 0;
     Tcl_DictSearch search;
     Tcl_Obj *key, *value;
@@ -1091,7 +1091,7 @@ void
 TkSendCleanup(
     TCL_UNUSED(TkDisplay *)) /* dispPtr */
 {
-	Tcl_Free((char *)appNameRegistryPath);
+	Tcl_Free(appNameRegistryPath);
 }
 
 
@@ -1230,7 +1230,7 @@ TkpTestsendCmd(
 	    if (property != NULL) {
 		XFree(property);
 	    }
-	} else if (Tcl_GetString(objv[4])[0] == 0) {
+	} else if (TkObjIsEmpty(objv[4])) {
 	    handler = Tk_CreateErrorHandler(winPtr->dispPtr->display,
 		    -1, -1, -1, NULL, NULL);
 	    DeleteProperty(winPtr->dispPtr->display, w, propName);
